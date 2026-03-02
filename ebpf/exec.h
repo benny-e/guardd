@@ -11,7 +11,10 @@ typedef uint32_t u32;
 
 struct exec_event {
     u32 pid;
+    u32 ppid;
+    u32 uid;
     char comm[16];
+    char filename[256];
 };
 
 #endif

@@ -21,7 +21,8 @@ static int handle_event(void *ctx, void *data, size_t data_sz)
     (void)data_sz;
 
     const struct exec_event *e = data;
-    printf("exec: pid=%u comm=%.*s\n", e->pid, 16, e->comm);
+    printf("exec: pid=%u ppid=%u uid=%u comm=%.*s file=%s\n",
+       e->pid, e->ppid, e->uid, 16, e->comm, e->filename);
     return 0;
 }
 
