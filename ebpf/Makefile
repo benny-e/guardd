@@ -4,7 +4,7 @@ BPF_CFLAGS ?= -O2 -g -Wall -Werror -target bpf -D__BPF__
 
 VMLINUX_BTF ?= /sys/kernel/btf/vmlinux
 
-all: exec_read netconnect_read
+all: exec_read netconnect_read guardd
 
 vmlinux.h:
 	bpftool btf dump file $(VMLINUX_BTF) format c > vmlinux.h
@@ -29,5 +29,9 @@ netconnect.skel.h: netconnect.bpf.o
 netconnect_read: netconnect_read.c netconnect.skel.h netconnect.h
 	clang -O2 -g -Wall -Werror netconnect_read.c -o netconnect_read -lbpf
 
+# --- guardd ---
+guardd: guardd.c exec.skel.h netconnect.skel.h exec.h netconnect.h
+	clang -O2 -g -Wall -Werror guardd.c -o guardd -lbpf
+
 clean:
-	rm -f vmlinux.h *.o *.skel.h exec_read netconnect_read
+	rm -f vmlinux.h *.o *.skel.h exec_read netconnect_read guardd
