@@ -5,8 +5,16 @@
 #include <bpf/bpf_core_read.h>
 
 #include "netconnect.h"
+#include "stats.h"
 
 char LICENSE[] SEC("license") = "GPL";
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, STAT_MAX);
+    __type(key, __u32);
+    __type(value, __u64);
+} stats SEC(".maps");
 
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
@@ -24,6 +32,9 @@ struct {
 SEC("tracepoint/sock/inet_sock_set_state")
 int handle_inet_sock_set_state(struct trace_event_raw_inet_sock_set_state *ctx)
 {
+    __u32 key;
+    __u64 *val;
+
     if (ctx->protocol != 6)
         return 0;
 
@@ -34,8 +45,12 @@ int handle_inet_sock_set_state(struct trace_event_raw_inet_sock_set_state *ctx)
         return 0;
 
     struct netconnect_event *e = bpf_ringbuf_reserve(&net_events, sizeof(*e), 0);
-    if (!e)
-        return 0;
+    if (!e) {
+	key = STAT_NET_RINGBUF_DROP;
+	val = bpf_map_lookup_elem(&stats, &key);
+	bump_stat(val);
+	return 0;
+    }
 
     u64 id = bpf_get_current_pid_tgid();
     u64 uid_gid = bpf_get_current_uid_gid();
@@ -53,5 +68,10 @@ int handle_inet_sock_set_state(struct trace_event_raw_inet_sock_set_state *ctx)
     e->dport = ctx->dport;
 
     bpf_ringbuf_submit(e, 0);
+
+    key = STAT_NET_EMIT_OK;
+    val = bpf_map_lookup_elem(&stats, &key);
+    bump_stat(val);
+
     return 0;
 }

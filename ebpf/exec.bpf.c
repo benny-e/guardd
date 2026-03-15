@@ -5,6 +5,7 @@
 #include <bpf/bpf_core_read.h>
 
 #include "exec.h"
+#include "stats.h"
 
 char LICENSE[] SEC("license") = "GPL";
 
@@ -13,12 +14,26 @@ struct {
     __uint(max_entries, 1 << 24); // 16MB
 } events SEC(".maps");
 
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, STAT_MAX);
+    __type(key, __u32);
+    __type(value, __u64);
+} stats SEC(".maps");
+
 SEC("tracepoint/sched/sched_process_exec")
 int handle_exec(struct trace_event_raw_sched_process_exec *ctx)
 {
+    __u32 key;
+    __u64 *val;
+
     struct exec_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
-    if (!e)
-        return 0;
+    if (!e) {
+	key = STAT_EXEC_RINGBUF_DROP;
+	val = bpf_map_lookup_elem(&stats, &key);
+	bump_stat(val);
+	return 0;
+    }
 
     u64 id = bpf_get_current_pid_tgid();
     u64 uid_gid = bpf_get_current_uid_gid();
@@ -38,5 +53,10 @@ int handle_exec(struct trace_event_raw_sched_process_exec *ctx)
     bpf_probe_read_str(e->filename, sizeof(e->filename), fname);
 
     bpf_ringbuf_submit(e, 0);
+
+    key = STAT_EXEC_EMIT_OK;
+    val = bpf_map_lookup_elem(&stats, &key);
+    bump_stat(val);
+
     return 0;
 }
