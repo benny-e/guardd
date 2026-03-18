@@ -5,12 +5,6 @@ __pycache__/
 .venv/
 venv/
 
-*.o
-*.so
-*.skel.h
-
-vmlinux.h
-
 data/
 *.sqlite
 *.db
@@ -19,3 +13,14 @@ data/
 *.log
 
 .DS_Store
+
+ebpf/*.o
+ebpf/*.skel.h
+ebpf/guardd
+ebpf/exec_read
+ebpf/netconnect_read
+ebpf/vmlinux.h
+guard/__pycache__/
+guard/ebpf/__pycache__/
+guard/pipeline/__pycache__/
+*.pyc
