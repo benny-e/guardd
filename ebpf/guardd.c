@@ -283,8 +283,6 @@ int main(int argc, char **argv) {
     goto cleanup;
   }
 
-  printf("guardd: listening for EXEC + NET events... (Ctrl+C to stop)\n");
-
   while (!stop) {
     int e1 = ring_buffer__poll(rb_exec, 100);
     if (e1 == -EINTR)
