@@ -57,7 +57,7 @@ def train_isolation_forest(
     contamination: float = 0.01,
     n_estimators: int = 200,
     random_state: int = 42,
-    threshold_percentile: float = 5.0,
+    threshold_percentile: float = 10.0,
 ) -> dict[str, Any]:
     dataset = load_training_dataset(
         str(db_path),
