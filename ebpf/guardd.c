@@ -81,8 +81,6 @@ static void json_print_escaped(const char *s) {
   }
 }
 
-/* -------- exec events -------- */
-
 static int handle_exec_event(void *ctx, void *data, size_t data_sz) {
   (void)ctx;
   (void)data_sz;
@@ -111,8 +109,6 @@ static int handle_exec_event(void *ctx, void *data, size_t data_sz) {
   }
   return 0;
 }
-
-/* -------- netconnect events -------- */
 
 static int handle_net_event(void *ctx, void *data, size_t data_sz) {
   (void)ctx;
@@ -227,7 +223,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  /* --- open --- */
   exec_skel = exec_bpf__open();
   if (!exec_skel) {
     fprintf(stderr, "guardd: failed to open exec skeleton\n");
@@ -242,7 +237,6 @@ int main(int argc, char **argv) {
     goto cleanup;
   }
 
-  /* --- load --- */
   if ((err = exec_bpf__load(exec_skel))) {
     fprintf(stderr, "guardd: failed to load exec BPF: %d\n", err);
     goto cleanup;
@@ -253,7 +247,6 @@ int main(int argc, char **argv) {
     goto cleanup;
   }
 
-  /* --- attach --- */
   if ((err = exec_bpf__attach(exec_skel))) {
     fprintf(stderr, "guardd: failed to attach exec BPF: %d\n", err);
     goto cleanup;
@@ -264,7 +257,6 @@ int main(int argc, char **argv) {
     goto cleanup;
   }
 
-  /* --- ring buffers --- */
   rb_exec = ring_buffer__new(bpf_map__fd(exec_skel->maps.events),
                              handle_exec_event, NULL, NULL);
   if (!rb_exec) {
