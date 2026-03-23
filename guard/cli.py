@@ -10,6 +10,8 @@ from guard.ebpf.reader import GuardReaderError, GuarddProcessReader, event_to_di
 from guard.model.infer import ModelInferer
 from guard.pipeline.aggregator import HostAggregator
 from guard.pipeline.features import vectorize_window
+from guard.pipeline.baseline import BaselineState
+from guard.model.train import bundle_summary_json, train_isolation_forest
 from guard.storage.feature_store import FeatureStore
 
 LOG = logging.getLogger(__name__)
@@ -154,6 +156,53 @@ def build_parser() -> argparse.ArgumentParser:
         help="do not write scored feature vectors to SQLite",
     )
 
+    train = sub.add_parser("train", help="train Isolation Forest model from stored features")
+    train.add_argument(
+        "--db-path",
+        default="data/features.db",
+        help="path to SQLite feature store",
+    )
+    train.add_argument(
+        "--model-out",
+        default="data/model.bundle",
+        help="path to output model bundle",
+    )
+    train.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="maximum number of rows to use for training",
+    )
+    train.add_argument(
+        "--contamination",
+        type=float,
+        default=0.01,
+        help="Isolation Forest contamination value",
+    )
+    train.add_argument(
+        "--n-estimators",
+        type=int,
+        default=200,
+        help="number of trees for Isolation Forest",
+    )
+    train.add_argument(
+        "--random-state",
+        type=int,
+        default=42,
+        help="random seed for training",
+    )
+    train.add_argument(
+        "--threshold-percentile",
+        type=float,
+        default=10.0,
+        help="low-score percentile used as anomaly threshold",
+    )
+    train.add_argument(
+        "--debug",
+        action="store_true",
+        help="enable debug logging",
+    )
+
     return parser
 
 
@@ -198,6 +247,29 @@ def _inference_summary(result) -> dict:
         "metadata": result.metadata,
     }
 
+def cmd_train(args: argparse.Namespace) -> int:
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    try:
+        result = train_isolation_forest(
+            args.db_path,
+            model_out_path=args.model_out,
+            limit=args.limit,
+            contamination=args.contamination,
+            n_estimators=args.n_estimators,
+            random_state=args.random_state,
+            threshold_percentile=args.threshold_percentile,
+        )
+    except ValueError as exc:
+        LOG.error("training failed: %s", exc)
+        return 1
+
+    print(json.dumps(result, sort_keys=True))
+    print(bundle_summary_json(args.model_out))
+    return 0
 
 def cmd_ingest(args: argparse.Namespace) -> int:
     logging.basicConfig(
@@ -250,6 +322,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
     agg = HostAggregator()
     store = FeatureStore(Path(args.db_path))
     store.init_db()
+    baseline = BaselineState()
 
     LOG.info("collecting features into %s", args.db_path)
 
@@ -258,8 +331,9 @@ def cmd_collect(args: argparse.Namespace) -> int:
             completed = agg.push(event)
 
             for window in completed:
-                vector = vectorize_window(window)
+                vector = vectorize_window(window, baseline=baseline)
                 store.insert_feature_vector(vector)
+                baseline.observe_window(window)
 
                 if args.print_windows:
                     print(json.dumps(_window_summary(window), sort_keys=True))
@@ -297,6 +371,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
     reader = GuarddProcessReader(Path(args.guardd_path))
     agg = HostAggregator()
     inferer = ModelInferer(Path(args.model_path))
+    baseline = BaselineState.from_dict(inferer.bundle["baseline_snapshot"])
 
     store = None
     if not args.no_store:
@@ -310,7 +385,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
             completed = agg.push(event)
 
             for window in completed:
-                vector = vectorize_window(window)
+                vector = vectorize_window(window, baseline = baseline)
 
                 if store is not None:
                     store.insert_feature_vector(vector)
@@ -321,6 +396,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
                     print(json.dumps(_feature_summary(vector), sort_keys=True))
 
                 result = inferer.score_feature_vector(vector)
+                baseline.observe_window(window)
 
                 if result.is_anomaly:
                     print(json.dumps(_anomaly_record(result), sort_keys=True))
@@ -338,7 +414,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
 
     finally:
         for window in agg.flush():
-            vector = vectorize_window(window)
+            vector = vectorize_window(window, baseline =baseline)
 
             if store is not None:
                 store.insert_feature_vector(vector)
@@ -349,6 +425,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
                 print(json.dumps(_feature_summary(vector), sort_keys=True))
 
             result = inferer.score_feature_vector(vector)
+            baseline.observe_window(window)
 
             if result.is_anomaly:
                 print(json.dumps(_anomaly_record(result), sort_keys=True))
@@ -370,6 +447,9 @@ def main() -> int:
 
     if args.command == "detect":
         return cmd_detect(args)
+
+    if args.command == "train":
+        return cmd_train(args)
 
     parser.error("unknown command")
     return 2

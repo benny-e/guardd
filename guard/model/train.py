@@ -31,6 +31,20 @@ def _atomic_write_bytes(path: Path, data: bytes) -> None:
 
     tmp_path.replace(path)
 
+def _build_baseline_snapshot(metadata_rows: list[dict[str, Any]]) -> dict[str, list[str]]:
+    known_comms: set[str] = set()
+    known_files: set[str] = set()
+
+    for metadata in metadata_rows:
+        for comm in metadata.get("unique_comms", []):
+            known_comms.add(str(comm))
+        for path in metadata.get("unique_files", []):
+            known_files.add(str(path))
+
+    return {
+        "known_comms": sorted(known_comms),
+        "known_files": sorted(known_files),
+    }
 
 def _compute_threshold(scores: list[float], percentile: float) -> float:
     if not scores:
@@ -73,6 +87,8 @@ def train_isolation_forest(
             f"not enough training rows: need at least 10, got {rows}"
         )
 
+    baseline_snapshot = _build_baseline_snapshot(dataset["metadata"])
+
     model = IsolationForest(
         n_estimators=n_estimators,
         contamination=contamination,
@@ -99,6 +115,7 @@ def train_isolation_forest(
         "random_state": int(random_state),
         "threshold_percentile": float(threshold_percentile),
         "threshold_score": float(threshold),
+        "baseline_snapshot": baseline_snapshot,
         "score_summary": {
             "min": min(scores),
             "max": max(scores),
