@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "guardd"
+version = "0.1.0"
+description = "Linux behavioral anomaly detection using eBPF and Isolation Forest"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["numpy", "scikit-learn"]
+
+[project.scripts]
+guard = "guard.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["guard*"]
+exclude = ["data*", "ebpf*", "systemd*", "tests*"]

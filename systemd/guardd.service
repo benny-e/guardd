@@ -1,0 +1,21 @@
+[Unit]
+Description=guardd behavioral detection service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/guardd
+ExecStart=/opt/guardd/.venv/bin/guard detect --model-path /opt/guardd/data/model.bundle
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

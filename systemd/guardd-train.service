@@ -1,0 +1,14 @@
+[Unit]
+Description=guardd model training job
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/opt/guardd/.venv/bin/guard train --db-path /opt/guardd/data/features.db --model-out /opt/guardd/data/model.bundle
+Environment=PYTHONUNBUFFERED=1
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/guardd/data
