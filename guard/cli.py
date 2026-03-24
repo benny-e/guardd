@@ -19,9 +19,9 @@ LOG = logging.getLogger(__name__)
 def _severity_from_score(score: float, threshold_score: float) -> str:
     delta = threshold_score - score
 
-    if delta >= 0.20:
+    if delta >= 0.08:
         return "high"
-    if delta >= 0.10:
+    if delta >= 0.03:
         return "medium"
     return "low"
 
@@ -267,8 +267,14 @@ def cmd_train(args: argparse.Namespace) -> int:
         LOG.error("training failed: %s", exc)
         return 1
 
+    retention_days = 45
+    cutoff_ms = int(time.time() * 1000) - (retention_days * 24 * 60 * 60 * 1000)
+    store = FeatureStore(args.db_path)
+    deleted_rows = store.delete_rows_older_than(cutoff_ms)
+
     print(json.dumps(result, sort_keys=True))
     print(bundle_summary_json(args.model_out))
+    LOG.info("deleted %s feature rows older than %s days", deleted_rows, retention_days)
     return 0
 
 def cmd_ingest(args: argparse.Namespace) -> int:

@@ -109,6 +109,17 @@ class FeatureStore:
         with self.connect() as conn:
             return conn.execute(query, params).fetchall()
 
+    def delete_rows_older_than(self, cutoff_ms: int) -> int:
+        with self.connect() as conn:
+            cur = conn.execute(
+                """
+                DELETE FROM feature_windows
+                WHERE window_start_ms < ?
+                """,
+                (cutoff_ms,),
+            )
+            return int(cur.rowcount)
+
     def load_feature_examples(
         self,
         *,
@@ -136,3 +147,5 @@ class FeatureStore:
             "metadata": json.loads(row["metadata_json"]),
             "created_at_ms": row["created_at_ms"],
         }
+
+    
