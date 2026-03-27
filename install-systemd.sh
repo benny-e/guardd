@@ -4,7 +4,7 @@ set -euo pipefail
 INSTALL_DIR="/opt/guardd"
 DATA_DIR="${INSTALL_DIR}/data"
 SYSTEMD_DIR="/etc/systemd/system"
-SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Run this script with sudo or as root."
