@@ -8,14 +8,19 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/opt/guardd
-ExecStart=/opt/guardd/.venv/bin/guard detect --model-path /opt/guardd/data/model.bundle
+ExecStart=/opt/guardd/.venv/bin/python -m guard daemon --mode auto --guardd-path /opt/guardd/ebpf/guardd --db-path /opt/guardd/data/features.db --model-path /opt/guardd/data/model.bundle
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+LimitMEMLOCK=infinity
+StandardOutput=journal
+StandardError=journal
 
 NoNewPrivileges=true
 PrivateTmp=true
+ProtectHome=true
 ProtectSystem=full
+ReadWritePaths=/opt/guardd/data
 
 [Install]
 WantedBy=multi-user.target

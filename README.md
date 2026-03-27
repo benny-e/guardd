@@ -1,97 +1,134 @@
 ## guardd
 
-Lightweight behavioral anomaly detection for Linux using eBPF and Isolation Forest.  
+AI-driven behavioral anomaly detection for Linux using eBPF and Isolation Forest.
 
-This is not signature-based and does not try to classify malware. It learns what is normal and reports outliers.  
+guardd collects low-level system events (process execution, network activity), aggregates them into time-windowed feature vectors, and detects anomalous behavior using a machine learning model.
 
-All data is outputted as NDJSON.  
+Output is emitted as structured NDJSON for easy integration with SIEM pipelines.
+
 
 ### Features
 
-- eBPF-based telemetry (exec + network events)  
-- Streaming ingestion pipeline  
-- Windowed feature aggregation  
-- Isolation Forest anomaly detection  
-- NDJSON output for easy integration  
-- Periodic retraining with systemd timer  
-- Automatic data retention cleanup  
-
-
-### How it works
-
-1. eBPF programs collect exec and network events  
-2. Python pipeline aggregates events into time windows  
-3. Features are written to a SQLite store  
-4. Model is trained on historical data  
-5. New windows are scored against the model  
-6. Low-score events are flagged as anomalies  
+eBPF-based kernel telemetry  
+Time-windowed behavioral feature aggregation  
+Isolation Forest anomaly detection  
+Automatic model training and retraining  
+NDJSON output  
+Designed to run as a systemd service  
 
 
 ### Installation
 
-```bash
+#### 1. Clone the repository
+
+```
 git clone https://github.com/benny-e/guardd.git
 cd guardd
+``````
 
-python3 -m venv .venv
-.venv/bin/pip install -e .
+#### 2. Run the install script
+
 ```
+sudo bash scripts/install-systemd.sh
+```
+
+This will:
+
+Install system dependencies  
+Copy the project to /opt/guardd  
+Create a Python virtual environment  
+Install the package  
+Build eBPF components  
+Install the systemd service  
+
+
+### How it works
+
+guardd runs as a single systemd service that manages the full lifecycle of data collection, training, and detection.
+
+On startup:
+
+If no model exists, guardd begins collecting baseline behavioral data  
+It attempts to train a model every 10 minutes until enough data is available  
+Once training succeeds, it switches automatically into detection mode  
+
+During operation:
+
+System activity is continuously aggregated into time windows and converted into feature vectors  
+Each window is scored by the trained Isolation Forest model  
+Anomalies are emitted as NDJSON  
+
+Ongoing:
+
+The model is retrained automatically once per week  
+Detection resumes immediately after retraining with the updated model  
+
 
 ### Usage
 
-### Detect
+#### Start service
+
+```
+sudo systemctl start guardd.service
+```
+
+#### Check status
+
+```
+systemctl status guardd.service
+```
+
+#### View logs
+
+```
+journalctl -u guardd.service -f
+```
+
+### Dependencies
+
+#### System
+
+python3  
+python3-venv  
+python3-pip  
+clang  
+llvm  
+libbpf-dev  
+libelf-dev  
+bpftool  
+build-essential  
+pkg-config  
+sqlite3  
+
+### Running without systemd
+
+You can run `guardd` directly from the command line without installing the systemd service.
+
+#### Run full daemon (recommended)
 
 ```bash
-sudo .venv/bin/guard detect --model-path data/model.bundle
+sudo /opt/guardd/.venv/bin/python -m guard daemon \
+  --mode auto \
+  --guardd-path /opt/guardd/ebpf/guardd \
+  --db-path /opt/guardd/data/features.db \
+  --model-path /opt/guardd/data/model.bundle
 ```
 
-### Train
+### Run individual components
 
-```bash
-sudo .venv/bin/guard train \
-  --db-path data/features.db \
-  --model-out data/model.bundle
-```
+Collect data:
+```sudo /opt/guardd/.venv/bin/python -m guard collect \
+  --guardd-path /opt/guardd/ebpf/guardd \
+  --db-path /opt/guardd/data/features.db```
 
----
+Train model:
+```sudo /opt/guardd/.venv/bin/python -m guard train \
+  --db-path /opt/guardd/data/features.db \
+  --model-out /opt/guardd/data/model.bundle```
 
-### Systemd setup
-
-```bash
-sudo cp systemd/guardd.service /etc/systemd/system/
-sudo cp systemd/guardd-train.service /etc/systemd/system/
-sudo cp systemd/guardd-train.timer /etc/systemd/system/
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now guardd.service
-sudo systemctl enable --now guardd-train.timer
-```
-
----
-
-### Output
-
-All output is newline-delimited JSON (NDJSON).
-
-Example anomaly:
-
-```json
-{
-  "type": "anomaly",
-  "score": -0.61,
-  "threshold_score": -0.57,
-  "severity": "low",
-  "summary": {
-    "exec_count": 372,
-    "unique_comm_count": 21
-  }
-}
-```
-
-
-### Notes
-
-- First runs may not detect much until enough data is collected  
-- Model quality improves over time as more normal behavior is observed  
-- Retraining is designed to run periodically (weekly)  
+Run Detection:
+```sudo /opt/guardd/.venv/bin/python -m guard detect \
+  --guardd-path /opt/guardd/ebpf/guardd \
+  --db-path /opt/guardd/data/features.db \
+  --model-path /opt/guardd/data/model.bundle```
 
