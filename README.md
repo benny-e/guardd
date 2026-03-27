@@ -29,7 +29,7 @@ cd guardd
 #### 2. Run the install script
 
 ```
-sudo bash scripts/install-systemd.sh
+sudo bash install-systemd.sh
 ```
 
 This will:
@@ -84,6 +84,41 @@ systemctl status guardd.service
 journalctl -u guardd.service -f
 ```
 
+### Running without systemd
+
+You can run `guardd` directly from the command line without installing the systemd service.
+
+#### Run full daemon 
+
+```bash
+sudo /opt/guardd/.venv/bin/python -m guard daemon \
+  --mode auto \
+  --guardd-path /opt/guardd/ebpf/guardd \
+  --db-path /opt/guardd/data/features.db \
+  --model-path /opt/guardd/data/model.bundle
+```
+
+### Run individual components
+
+Collect data:
+```sudo /opt/guardd/.venv/bin/python -m guard collect \
+  --guardd-path /opt/guardd/ebpf/guardd \
+  --db-path /opt/guardd/data/features.db
+```
+
+Train model:
+```sudo /opt/guardd/.venv/bin/python -m guard train \
+  --db-path /opt/guardd/data/features.db \
+  --model-out /opt/guardd/data/model.bundle
+```
+
+Run Detection:
+```sudo /opt/guardd/.venv/bin/python -m guard detect \
+  --guardd-path /opt/guardd/ebpf/guardd \
+  --db-path /opt/guardd/data/features.db \
+  --model-path /opt/guardd/data/model.bundle
+```
+
 ### Dependencies
 
 #### System
@@ -99,36 +134,4 @@ bpftool
 build-essential  
 pkg-config  
 sqlite3  
-
-### Running without systemd
-
-You can run `guardd` directly from the command line without installing the systemd service.
-
-#### Run full daemon (recommended)
-
-```bash
-sudo /opt/guardd/.venv/bin/python -m guard daemon \
-  --mode auto \
-  --guardd-path /opt/guardd/ebpf/guardd \
-  --db-path /opt/guardd/data/features.db \
-  --model-path /opt/guardd/data/model.bundle
-```
-
-### Run individual components
-
-Collect data:
-```sudo /opt/guardd/.venv/bin/python -m guard collect \
-  --guardd-path /opt/guardd/ebpf/guardd \
-  --db-path /opt/guardd/data/features.db```
-
-Train model:
-```sudo /opt/guardd/.venv/bin/python -m guard train \
-  --db-path /opt/guardd/data/features.db \
-  --model-out /opt/guardd/data/model.bundle```
-
-Run Detection:
-```sudo /opt/guardd/.venv/bin/python -m guard detect \
-  --guardd-path /opt/guardd/ebpf/guardd \
-  --db-path /opt/guardd/data/features.db \
-  --model-path /opt/guardd/data/model.bundle```
 
