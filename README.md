@@ -101,19 +101,22 @@ sudo /opt/guardd/.venv/bin/python -m guard daemon \
 ### Run individual components
 
 Collect data:
-```sudo /opt/guardd/.venv/bin/python -m guard collect \
+```bash
+sudo /opt/guardd/.venv/bin/python -m guard collect \
   --guardd-path /opt/guardd/ebpf/guardd \
   --db-path /opt/guardd/data/features.db
 ```
 
 Train model:
-```sudo /opt/guardd/.venv/bin/python -m guard train \
+```bash
+sudo /opt/guardd/.venv/bin/python -m guard train \
   --db-path /opt/guardd/data/features.db \
   --model-out /opt/guardd/data/model.bundle
 ```
 
 Run Detection:
-```sudo /opt/guardd/.venv/bin/python -m guard detect \
+```bash
+sudo /opt/guardd/.venv/bin/python -m guard detect \
   --guardd-path /opt/guardd/ebpf/guardd \
   --db-path /opt/guardd/data/features.db \
   --model-path /opt/guardd/data/model.bundle
