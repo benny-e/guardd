@@ -43,6 +43,9 @@ rsync -a --delete \
   --exclude 'data/*.bundle' \
   "${SRC_DIR}/" "${INSTALL_DIR}/"
 
+echo "[*] Ensuring data directory exists..."
+mkdir -p "${DATA_DIR}"
+
 echo "[*] Setting ownership..."
 chown -R root:root "${INSTALL_DIR}"
 
