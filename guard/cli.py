@@ -14,6 +14,8 @@ from guard.pipeline.aggregator import HostAggregator
 from guard.pipeline.baseline import BaselineState
 from guard.pipeline.features import vectorize_window
 from guard.storage.feature_store import FeatureStore
+from guard.pipeline.explain import explain_anomaly
+from guard.pipeline.features import FEATURE_NAMES
 
 LOG = logging.getLogger(__name__)
 
@@ -71,20 +73,10 @@ def _severity_from_score(score: float, threshold_score: float) -> str:
         return "medium"
     return "low"
 
-
 def _anomaly_summary(result) -> dict:
-    values = result.values
     return {
-        "exec_count": values[0],
-        "net_count": values[1],
-        "unique_uid_count": values[2],
-        "unique_comm_count": values[3],
-        "unique_file_count": values[4],
-        "unique_parent_child_count": values[5],
-        "unique_dst_ip_count": values[6],
-        "unique_dst_port_count": values[7],
-        "exec_to_net_ratio": values[8],
-        "ringbuf_drop_total": values[9],
+        name: float(value)
+        for name, value in zip(FEATURE_NAMES, result.values)
     }
 
 
@@ -98,6 +90,7 @@ def _anomaly_record(result) -> dict:
         "threshold_score": result.threshold_score,
         "severity": _severity_from_score(result.score, result.threshold_score),
         "summary": _anomaly_summary(result),
+        "reasons": explain_anomaly(result),
         "metadata": result.metadata,
     }
 
