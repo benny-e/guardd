@@ -6,7 +6,7 @@ from guard.pipeline.aggregator import WindowState
 from guard.pipeline.baseline import BaselineState
 
 
-FEATURE_VERSION = 2
+FEATURE_VERSION = 3
 
 FEATURE_NAMES = [
     "exec_count",
@@ -21,6 +21,8 @@ FEATURE_NAMES = [
     "ringbuf_drop_total",
     "new_comm_count",
     "new_file_count",
+    "new_parent_child_counts",
+    "new_parent_child_ratio",
 ]
 
 
@@ -49,9 +51,16 @@ def vectorize_window(
     if baseline is None:
         new_comms: list[str] = []
         new_files: list[str] = []
+        new_parent_child: list[tuple[int, str]] = []
     else:
         new_comms = baseline.new_comms(window)
         new_files = baseline.new_files(window)
+        new_parent_child = baseline.new_parent_child(window)
+
+    if window.unique_parent_child:
+        new_parent_child_ratio = float(len(new_parent_child)) / float(len(window.unique_parent_child))
+    else:
+        new_parent_child_ratio = 0.0
 
     values = [
         float(window.exec_count),
@@ -66,6 +75,8 @@ def vectorize_window(
         ringbuf_drop_total,
         float(len(new_comms)),
         float(len(new_files)),
+        float(len(new_parent_child)),
+        float(new_parent_child_ratio),
     ]
 
     metadata = {
@@ -73,8 +84,16 @@ def vectorize_window(
         "unique_files": sorted(window.unique_files),
         "unique_dst_ips": sorted(window.unique_dst_ips),
         "unique_dst_ports": sorted(window.unique_dst_ports),
+        "unique_parent_child": [
+            {"ppid": ppid, "comm": comm}
+            for ppid, comm in sorted(window.unique_parent_child)
+        ],
         "new_comms": new_comms,
         "new_files": new_files,
+        "new_parent_child": [
+            {"ppid": ppid, "comm": comm}
+            for ppid, comm in new_parent_child
+        ],
     }
 
     return FeatureVector(

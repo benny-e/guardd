@@ -18,6 +18,7 @@ def explain_anomaly(result) -> list[str]:
 
     new_comms = metadata.get("new_comms", [])
     new_files = metadata.get("new_files", [])
+    new_parent_child = metadata.get("new_parent_child", [])
 
     if new_comms:
         reasons.append(
@@ -54,6 +55,13 @@ def explain_anomaly(result) -> list[str]:
         reasons.append(
             f"telemetry drops detected: {int(ringbuf_drop_total)} dropped ring buffer events"
         )
+
+    if new_parent_child:
+        preview = ", ".join(
+            f"({item['ppid']} -> {item['comm']})"
+            for item in new_parent_child[:3]
+        )
+        reasons.append(f"new parent-child patterns observed: {preview}")
 
     if not reasons:
         reasons.append("window score was below anomaly threshold based on aggregate behavior")

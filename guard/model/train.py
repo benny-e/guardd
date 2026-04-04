@@ -31,19 +31,31 @@ def _atomic_write_bytes(path: Path, data: bytes) -> None:
 
     tmp_path.replace(path)
 
-def _build_baseline_snapshot(metadata_rows: list[dict[str, Any]]) -> dict[str, list[str]]:
+def _build_baseline_snapshot(metadata_rows: list[dict[str, Any]]) -> dict[str, Any]:
     known_comms: set[str] = set()
     known_files: set[str] = set()
+    known_parent_child: set[tuple[int, str]] = set()
 
     for metadata in metadata_rows:
         for comm in metadata.get("unique_comms", []):
             known_comms.add(str(comm))
+
         for path in metadata.get("unique_files", []):
             known_files.add(str(path))
+
+        for item in metadata.get("unique_parent_child", []):
+            if isinstance(item, dict):
+                known_parent_child.add(
+                    (int(item["ppid"]), str(item["comm"]))
+                )
 
     return {
         "known_comms": sorted(known_comms),
         "known_files": sorted(known_files),
+        "known_parent_child": [
+            {"ppid": ppid, "comm": comm}
+            for ppid, comm in sorted(known_parent_child)
+        ],
     }
 
 def _compute_threshold(scores: list[float], percentile: float) -> float:
@@ -100,7 +112,6 @@ def train_isolation_forest(
     raw_scores = model.score_samples(X)
     scores = [float(score) for score in raw_scores]
 
-    # Lower score = more anomalous, so threshold is taken from low percentile.
     threshold = _compute_threshold(scores, threshold_percentile)
 
     bundle = {
