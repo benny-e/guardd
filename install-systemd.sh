@@ -23,7 +23,6 @@ apt-get install -y \
   llvm \
   libbpf-dev \
   libelf-dev \
-  bpftool \
   pkg-config \
   sqlite3 \
   rsync

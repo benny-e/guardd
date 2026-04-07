@@ -2,6 +2,8 @@
 
 AI-driven behavioral anomaly detection for Linux using eBPF and Isolation Forest.
 
+Note: This is still in progress. Features are still being added/tested.   
+
 guardd collects low-level system events (process execution, network activity), aggregates them into time-windowed feature vectors, and detects anomalous behavior using a machine learning model.
 
 Output is emitted as structured NDJSON for easy integration with SIEM pipelines.
@@ -82,6 +84,15 @@ systemctl status guardd.service
 
 ```
 journalctl -u guardd.service -f
+```
+
+#### Terminal TUI
+
+guardd includes a temrinal UI for browsing recent alerts and searching anomalies  
+
+To launch: (after starting guardd.service)
+```bash
+/opt/guardd/.venv/bin/python -m guard tui --db-path /opt/guardd/data/features.db
 ```
 
 ### Running without systemd

@@ -7,6 +7,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from guard.storage.anomaly_store import AnomalyStore
+from guard.tui import run_tui
 from guard.ebpf.reader import GuardReaderError, GuarddProcessReader, event_to_dict
 from guard.model.infer import ModelInferer
 from guard.model.train import bundle_summary_json, train_isolation_forest
@@ -79,6 +81,10 @@ def _anomaly_summary(result) -> dict:
         for name, value in zip(FEATURE_NAMES, result.values)
     }
 
+def _make_anomaly_store(db_path: str | Path) -> AnomalyStore:
+    store = AnomalyStore(Path(db_path))
+    store.init_db()
+    return store
 
 def _anomaly_record(result) -> dict:
     return {
@@ -214,6 +220,7 @@ def run_collect_loop(
     reader = GuarddProcessReader(Path(guardd_path))
     agg = HostAggregator()
     store = _make_store(db_path)
+
     baseline = BaselineState()
 
     LOG.info("collecting features into %s", db_path)
@@ -286,6 +293,9 @@ def run_detect_loop(
     agg = HostAggregator()
     store = None if no_store else _make_store(db_path)
 
+    anomaly_store = AnomalyStore(Path(db_path))
+    anomaly_store.init_db()
+
     LOG.info("detecting with model %s", model_path)
     completed_window_count = 0
 
@@ -308,7 +318,11 @@ def run_detect_loop(
         reloader.baseline.observe_window(window)
 
         if result.is_anomaly:
-            print(json.dumps(_anomaly_record(result), sort_keys=True))
+            record = _anomaly_record(result)
+
+            anomaly_store.insert_anomaly(record)   
+
+            print(json.dumps(record, sort_keys=True))
         elif print_all_scores:
             print(json.dumps(_inference_summary(result), sort_keys=True))
 
@@ -488,6 +502,9 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--random-state", type=int, default=42, help="random seed for training")
     train.add_argument("--threshold-percentile", type=float, default=10.0, help="low-score percentile used as anomaly threshold")
     train.add_argument("--debug", action="store_true", help="enable debug logging")
+    tui = sub.add_parser("tui", help="browse recent and historical alerts")
+    tui.add_argument("--db-path", default="data/features.db", help="path to SQLite database")
+    tui.add_argument("--limit", type=int, default=200, help="max alerts to load")
 
     return parser
 
@@ -603,6 +620,9 @@ def cmd_daemon(args: argparse.Namespace) -> int:
 
     return run_daemon_auto_loop(args)
 
+def cmd_tui(args: argparse.Namespace) -> int:
+    _configure_logging(False)
+    return run_tui(db_path=args.db_path, limit=args.limit)
 
 def main() -> int:
     parser = build_parser()
@@ -618,6 +638,8 @@ def main() -> int:
         return cmd_daemon(args)
     if args.command == "train":
         return cmd_train(args)
+    if args.command == "tui":
+        return cmd_tui(args)
 
     parser.error("unknown command")
     return 2
