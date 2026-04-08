@@ -10,15 +10,6 @@ Output is emitted as structured NDJSON for easy integration with SIEM pipelines.
 
 ---
 
-### Quick Start
-
-```bash
-sudo ./install.sh  
-sudo systemctl start guardd.service  
-guardd tui 
-```
----
-
 ### Features
 
 eBPF-based kernel telemetry  
@@ -32,6 +23,28 @@ TUI for checking anomalies
 
 ---
 
+### How it works
+
+guardd runs as a single systemd service that manages the full lifecycle of data collection, training, and detection.
+
+On startup:
+
+If no model exists, guardd begins collecting baseline behavioral data  
+It attempts to train a model every 10 minutes until enough data is available  
+Once training succeeds, it switches automatically into detection mode  
+
+During operation:
+
+System activity is continuously aggregated into time windows and converted into feature vectors  
+Each window is scored by the trained Isolation Forest model  
+Anomalies are emitted as NDJSON  
+
+Ongoing:
+
+The model is retrained automatically once per week  
+Detection resumes immediately after retraining with the updated model  
+
+---
 ### Installation
 
 #### 1. Clone the repository
@@ -58,6 +71,65 @@ Install the systemd service
 
 ---
 
+### Usage
+
+#### Start service
+
+```
+sudo systemctl start guardd.service
+```
+
+#### Check status
+
+```
+systemctl status guardd.service
+```
+
+#### View logs
+
+```
+journalctl -u guardd.service -f
+```
+---
+
+#### Terminal TUI
+
+guardd includes a temrinal UI for browsing recent alerts and searching anomalies  
+
+To launch: (after starting guardd.service)
+```bash
+guardd tui
+```
+
+---
+
+### Running without systemd
+
+You can run `guardd` directly from the command line without installing the systemd service. This can be configured to run with other init systems  
+
+#### Run full daemon 
+
+```bash
+sudo guardd daemon
+```
+
+#### Run individual components
+
+Collect data:
+```bash
+sudo guardd collect
+```
+
+Train model:
+```bash
+sudo guardd train
+```
+
+Run Detection:
+```bash
+sudo guardd detect
+```
+---
 ### Configuration
 
 guardd supports configuration via a `config.toml` file.
@@ -146,90 +218,6 @@ Controls where guardd reads/writes data.
 
  Config values override CLI defaults   
  CLI arguments can still override config if explicitly provided  
-
----
-
-### How it works
-
-guardd runs as a single systemd service that manages the full lifecycle of data collection, training, and detection.
-
-On startup:
-
-If no model exists, guardd begins collecting baseline behavioral data  
-It attempts to train a model every 10 minutes until enough data is available  
-Once training succeeds, it switches automatically into detection mode  
-
-During operation:
-
-System activity is continuously aggregated into time windows and converted into feature vectors  
-Each window is scored by the trained Isolation Forest model  
-Anomalies are emitted as NDJSON  
-
-Ongoing:
-
-The model is retrained automatically once per week  
-Detection resumes immediately after retraining with the updated model  
-
----
-
-### Usage
-
-#### Start service
-
-```
-sudo systemctl start guardd.service
-```
-
-#### Check status
-
-```
-systemctl status guardd.service
-```
-
-#### View logs
-
-```
-journalctl -u guardd.service -f
-```
----
-
-#### Terminal TUI
-
-guardd includes a temrinal UI for browsing recent alerts and searching anomalies  
-
-To launch: (after starting guardd.service)
-```bash
-guardd tui
-```
-
----
-
-### Running without systemd
-
-You can run `guardd` directly from the command line without installing the systemd service. This can be configured to run with other init systems  
-
-#### Run full daemon 
-
-```bash
-sudo guardd daemon
-```
-
-#### Run individual components
-
-Collect data:
-```bash
-sudo guardd collect
-```
-
-Train model:
-```bash
-sudo guardd train
-```
-
-Run Detection:
-```bash
-sudo guardd detect
-```
 
 ---
 
