@@ -86,67 +86,61 @@ guardd_path = "/opt/guardd/ebpf/guardd"
 
 Controls the lifecycle of guardd.
 
- mode
-   `"auto"` → full pipeline (collect → train → detect)
-   `"collect"` → only collect data
-   `"detect"` → only run detection (requires model)
+ mode  
+   -`"auto"` → full pipeline (collect → train → detect)  
+   -`"collect"` → only collect data  
+   -`"detect"` → only run detection (requires model)  
 
- bootstrap_retry_seconds
-   How often guardd attempts initial training when no model exists
-   During this phase, guardd collects data and periodically pauses to try training
-   Lower for testing, higher for production
+ bootstrap_retry_seconds  
+   -How often guardd attempts initial training when no model exists  
+   -During this phase, guardd collects data and periodically pauses to try training  
 
- retrain_interval_seconds
-   How often the model is retrained after initial bootstrap
-   Default: 7 days (604800 seconds)
+ retrain_interval_seconds  
+   -How often the model is retrained after initial bootstrap  
+   -Default: 7 days (604800 seconds)  
 
 
 #### [training]
 
-Controls model behavior and requirements.
+Controls model behavior and requirements.  
 
- min_training_rows
-   Minimum number of feature windows required to train
-   If not met, training fails and will retry later
-   Example:
-     `1` → fast testing
-     `100+` → realistic baseline
+ min_training_rows  
+   -Minimum number of feature windows required to train  
+   -If not met, training fails and will retry later  
 
- contamination
-   Expected proportion of anomalies in the data
-   Passed directly to Isolation Forest
-   Typical values: `0.01`–`0.05`
+ contamination  
+   -Expected proportion of anomalies in the data  
+   -Passed directly to Isolation Forest  
+   -Typical values: `0.01`–`0.05`  
 
- n_estimators
-   Number of trees in the Isolation Forest
-   Higher = more accurate, slower training
+ n_estimators  
+   -Number of trees in the Isolation Forest  
+   -Higher = more accurate, slower training  
 
- threshold_percentile
-   Determines anomaly cutoff score
-   Lower = more aggressive detection
-   Example:
-     `10.0` → bottom 10% considered anomalous
+ threshold_percentile  
+   -Determines anomaly cutoff score  
+   -Lower = more aggressive detection  
 
 
 #### [paths]
 
-Controls where guardd reads/writes data.
+Controls where guardd reads/writes data.  
 
- db_path
-   SQLite database storing feature vectors and anomalies
+ db_path  
+   -SQLite database storing feature vectors and anomalies
 
- model_path
-   Serialized model bundle used for detection
+ model_path  
+   -Serialized model bundle used for detection
 
- guardd_path
-   Path to the eBPF collector binary
+ guardd_path  
+   -Path to the eBPF collector binary
 
 
 #### Notes
 
- Config values override CLI defaults  
+ Config values override CLI defaults   
  CLI arguments can still override config if explicitly provided  
- For quick testing:
+ For quick testing:  
 
 ```toml
 bootstrap_retry_seconds = 60
