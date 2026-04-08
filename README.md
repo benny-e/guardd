@@ -8,6 +8,8 @@ guardd collects low-level system events (process execution, network activity), a
 
 Output is emitted as structured NDJSON for easy integration with SIEM pipelines.
 
+---
+
 ### Quick Start
 
 ```bash
@@ -15,6 +17,7 @@ sudo ./install.sh
 sudo systemctl start guardd.service  
 guardd tui 
 ```
+---
 
 ### Features
 
@@ -26,6 +29,8 @@ Config handled via config.toml
 NDJSON output  
 Designed to run as a systemd service  
 TUI for checking anomalies  
+
+---
 
 ### Installation
 
@@ -51,6 +56,7 @@ Install the package
 Build eBPF components  
 Install the systemd service  
 
+---
 
 ### Configuration
 
@@ -140,12 +146,8 @@ Controls where guardd reads/writes data.
 
  Config values override CLI defaults   
  CLI arguments can still override config if explicitly provided  
- For quick testing:  
 
-```toml
-bootstrap_retry_seconds = 60
-min_training_rows = 1
-```
+---
 
 ### How it works
 
@@ -168,6 +170,7 @@ Ongoing:
 The model is retrained automatically once per week  
 Detection resumes immediately after retraining with the updated model  
 
+---
 
 ### Usage
 
@@ -188,6 +191,7 @@ systemctl status guardd.service
 ```
 journalctl -u guardd.service -f
 ```
+---
 
 #### Terminal TUI
 
@@ -197,6 +201,8 @@ To launch: (after starting guardd.service)
 ```bash
 guardd tui
 ```
+
+---
 
 ### Running without systemd
 
@@ -208,7 +214,7 @@ You can run `guardd` directly from the command line without installing the syste
 sudo guardd daemon
 ```
 
-### Run individual components
+#### Run individual components
 
 Collect data:
 ```bash
@@ -224,6 +230,8 @@ Run Detection:
 ```bash
 sudo guardd detect
 ```
+
+---
 
 ### Dependencies
 
