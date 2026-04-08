@@ -12,6 +12,7 @@ data/
 data/
 
 *.log
+*.egg-info/
 
 .DS_Store
 

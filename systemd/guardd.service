@@ -8,7 +8,7 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/opt/guardd
-ExecStart=/opt/guardd/.venv/bin/python -m guard daemon --mode auto --guardd-path /opt/guardd/ebpf/guardd --db-path /opt/guardd/data/features.db --model-path /opt/guardd/data/model.bundle
+ExecStart=/opt/guardd/.venv/bin/guardd
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

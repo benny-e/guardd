@@ -7,6 +7,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from guard.config import ConfigError, deep_get, load_config
 from guard.storage.anomaly_store import AnomalyStore
 from guard.tui import run_tui
 from guard.ebpf.reader import GuardReaderError, GuarddProcessReader, event_to_dict
@@ -21,16 +22,212 @@ from guard.pipeline.features import FEATURE_NAMES
 
 LOG = logging.getLogger(__name__)
 
-BOOTSTRAP_RETRY_SECONDS = 10 * 60
-RETRAIN_INTERVAL_SECONDS = 7 * 24 * 60 * 60
-
-
 def _configure_logging(debug: bool) -> None:
     logging.basicConfig(
         level=logging.DEBUG if debug else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
+def _pick(cli_value, config_value, default):
+    if cli_value is not None:
+        return cli_value
+    if config_value is not None:
+        return config_value
+    return default
+
+
+def _resolve_common_paths(args: argparse.Namespace, config: dict) -> None:
+    args.sensor_path = _pick(
+        getattr(args, "sensor_path", None),
+        deep_get(config, "paths", "sensor_path"),
+        "./ebpf/guardd",
+    )
+    args.db_path = _pick(
+        getattr(args, "db_path", None),
+        deep_get(config, "paths", "db_path"),
+        "data/features.db",
+    )
+    args.model_path = _pick(
+        getattr(args, "model_path", None),
+        deep_get(config, "paths", "model_path"),
+        "data/model.bundle",
+    )
+    args.debug = _pick(
+        getattr(args, "debug", None),
+        deep_get(config, "logging", "debug"),
+        False,
+    )
+
+
+def _resolve_train_settings(args: argparse.Namespace, config: dict) -> None:
+    args.limit = _pick(
+        getattr(args, "limit", None),
+        deep_get(config, "train", "limit"),
+        None,
+    )
+    args.min_training_rows = _pick(
+        getattr(args, "min_training_rows", None),
+        deep_get(config, "train", "min_training_rows"),
+        10,
+    )
+    args.contamination = _pick(
+        getattr(args, "contamination", None),
+        deep_get(config, "train", "contamination"),
+        0.01,
+    )
+    args.n_estimators = _pick(
+        getattr(args, "n_estimators", None),
+        deep_get(config, "train", "n_estimators"),
+        200,
+    )
+    args.random_state = _pick(
+        getattr(args, "random_state", None),
+        deep_get(config, "train", "random_state"),
+        42,
+    )
+    args.threshold_percentile = _pick(
+        getattr(args, "threshold_percentile", None),
+        deep_get(config, "train", "threshold_percentile"),
+        10.0,
+    )
+
+
+def _resolve_daemon_settings(args: argparse.Namespace, config: dict) -> None:
+    args.mode = _pick(
+        getattr(args, "mode", None),
+        deep_get(config, "daemon", "mode"),
+        "auto",
+    )
+    args.print_windows = _pick(
+        getattr(args, "print_windows", None),
+        deep_get(config, "daemon", "print_windows"),
+        False,
+    )
+    args.print_features = _pick(
+        getattr(args, "print_features", None),
+        deep_get(config, "daemon", "print_features"),
+        False,
+    )
+    args.print_all_scores = _pick(
+        getattr(args, "print_all_scores", None),
+        deep_get(config, "daemon", "print_all_scores"),
+        False,
+    )
+    args.no_store = _pick(
+        getattr(args, "no_store", None),
+        deep_get(config, "daemon", "no_store"),
+        False,
+    )
+    args.bootstrap_retry_seconds = _pick(
+        getattr(args, "bootstrap_retry_seconds", None),
+        deep_get(config, "daemon", "bootstrap_retry_seconds"),
+        10 * 60,
+    )
+
+    args.retrain_interval_seconds = _pick(
+        getattr(args, "retrain_interval_seconds", None),
+        deep_get(config, "daemon", "retrain_interval_seconds"),
+        7 * 24 * 60 * 60,
+    )
+
+
+def _resolve_tui_settings(args: argparse.Namespace, config: dict) -> None:
+    args.db_path = _pick(
+        getattr(args, "db_path", None),
+        deep_get(config, "paths", "db_path"),
+        "data/features.db",
+    )
+    args.limit = _pick(
+        getattr(args, "limit", None),
+        deep_get(config, "tui", "limit"),
+        200,
+    )
+
+
+def resolve_args(args: argparse.Namespace, config: dict) -> argparse.Namespace:
+    if args.command is None:
+        args.command = "daemon"
+
+    if args.command in {"ingest", "collect", "detect", "daemon"}:
+        _resolve_common_paths(args, config)
+
+    if args.command == "daemon":
+        _resolve_daemon_settings(args, config)
+        _resolve_train_settings(args, config)
+
+    elif args.command == "train":
+        args.db_path = _pick(
+            getattr(args, "db_path", None),
+            deep_get(config, "paths", "db_path"),
+            "data/features.db",
+        )
+        args.model_out = _pick(
+            getattr(args, "model_out", None),
+            deep_get(config, "paths", "model_path"),
+            "data/model.bundle",
+        )
+        args.debug = _pick(
+            getattr(args, "debug", None),
+            deep_get(config, "logging", "debug"),
+            False,
+        )
+        _resolve_train_settings(args, config)
+
+    elif args.command == "tui":
+        _resolve_tui_settings(args, config)
+
+    elif args.command == "collect":
+        args.print_windows = _pick(
+            getattr(args, "print_windows", None),
+            deep_get(config, "collect", "print_windows"),
+            False,
+        )
+        args.print_features = _pick(
+            getattr(args, "print_features", None),
+            deep_get(config, "collect", "print_features"),
+            False,
+        )
+
+    elif args.command == "detect":
+        args.print_windows = _pick(
+            getattr(args, "print_windows", None),
+            deep_get(config, "detect", "print_windows"),
+            False,
+        )
+        args.print_features = _pick(
+            getattr(args, "print_features", None),
+            deep_get(config, "detect", "print_features"),
+            False,
+        )
+        args.print_all_scores = _pick(
+            getattr(args, "print_all_scores", None),
+            deep_get(config, "detect", "print_all_scores"),
+            False,
+        )
+        args.no_store = _pick(
+            getattr(args, "no_store", None),
+            deep_get(config, "detect", "no_store"),
+            False,
+        )
+
+    elif args.command == "ingest":
+        args.pretty = _pick(
+            getattr(args, "pretty", None),
+            deep_get(config, "ingest", "pretty"),
+            False,
+        )
+        args.print_windows = _pick(
+            getattr(args, "print_windows", None),
+            deep_get(config, "ingest", "print_windows"),
+            False,
+        )
+        args.print_features = _pick(
+            getattr(args, "print_features", None),
+            deep_get(config, "ingest", "print_features"),
+            False,
+        )
+
+    return args
 
 def _make_store(db_path: str | Path) -> FeatureStore:
     store = FeatureStore(Path(db_path))
@@ -127,6 +324,7 @@ def _is_not_enough_training_data(exc: ValueError) -> bool:
 
 def try_train_model(
     *,
+    min_training_rows: int = 10,
     db_path: str | Path,
     model_out: str | Path,
     limit: int | None = None,
@@ -137,14 +335,10 @@ def try_train_model(
     prune_retention_days: int = 45,
     emit_json: bool = False,
 ) -> bool:
-    """
-    Returns True if training succeeded and wrote a model.
-    Returns False if training was skipped because there are not enough rows.
-    Raises on real failures.
-    """
     try:
         result = train_isolation_forest(
             db_path,
+            min_training_rows=min_training_rows,
             model_out_path=model_out,
             limit=limit,
             contamination=contamination,
@@ -208,20 +402,20 @@ class ReloadableInferer:
         assert self.inferer is not None
         return self.inferer.score_feature_vector(vector)
 
-
 def run_collect_loop(
     *,
-    guardd_path: str | Path,
+    sensor_path: str | Path,
     db_path: str | Path,
     print_windows: bool = False,
     print_features: bool = False,
     should_stop: Callable[[], bool] | None = None,
-) -> int:
-    reader = GuarddProcessReader(Path(guardd_path))
+) -> str | int:
+    reader = GuarddProcessReader(Path(sensor_path))
     agg = HostAggregator()
     store = _make_store(db_path)
 
     baseline = BaselineState()
+    scheduled_stop = False
 
     LOG.info("collecting features into %s", db_path)
 
@@ -242,17 +436,22 @@ def run_collect_loop(
 
                 if should_stop is not None and should_stop():
                     LOG.info("stopping collect loop for scheduled daemon action")
+                    scheduled_stop = True
                     reader.stop()
                     break
+
+            if scheduled_stop:
+                break
 
     except KeyboardInterrupt:
         LOG.info("stopping collection")
         reader.stop()
+        return "interrupted"
 
     except GuardReaderError as exc:
         LOG.error("collection failed: %s", exc)
         reader.stop()
-        return 1
+        return "error"
 
     finally:
         for window in agg.flush():
@@ -266,12 +465,14 @@ def run_collect_loop(
                 print_features=print_features,
             )
 
-    return 0
+    if scheduled_stop:
+        return "scheduled_stop"
 
+    return 0
 
 def run_detect_loop(
     *,
-    guardd_path: str | Path,
+    sensor_path: str | Path,
     db_path: str | Path,
     model_path: str | Path,
     print_windows: bool = False,
@@ -280,7 +481,7 @@ def run_detect_loop(
     no_store: bool = False,
     reload_check_every_windows: int = 5,
     should_stop: Callable[[], bool] | None = None,
-) -> int:
+) -> str | int:
     model_path = Path(model_path)
 
     try:
@@ -289,7 +490,7 @@ def run_detect_loop(
         LOG.error("model.bundle not found — run 'guard collect' and 'guard train' first")
         return 1
 
-    reader = GuarddProcessReader(Path(guardd_path))
+    reader = GuarddProcessReader(Path(sensor_path))
     agg = HostAggregator()
     store = None if no_store else _make_store(db_path)
 
@@ -298,9 +499,10 @@ def run_detect_loop(
 
     LOG.info("detecting with model %s", model_path)
     completed_window_count = 0
+    scheduled_stop = False
 
     def process_window(window) -> bool:
-        nonlocal completed_window_count
+        nonlocal completed_window_count, scheduled_stop
 
         vector = vectorize_window(window, baseline=reloader.baseline)
 
@@ -319,9 +521,7 @@ def run_detect_loop(
 
         if result.is_anomaly:
             record = _anomaly_record(result)
-
-            anomaly_store.insert_anomaly(record)   
-
+            anomaly_store.insert_anomaly(record)
             print(json.dumps(record, sort_keys=True))
         elif print_all_scores:
             print(json.dumps(_inference_summary(result), sort_keys=True))
@@ -332,6 +532,7 @@ def run_detect_loop(
 
         if should_stop is not None and should_stop():
             LOG.info("stopping detect loop for scheduled daemon action")
+            scheduled_stop = True
             return True
 
         return False
@@ -346,42 +547,48 @@ def run_detect_loop(
                     reader.stop()
                     break
 
+            if scheduled_stop:
+                break
+
     except KeyboardInterrupt:
         LOG.info("stopping detection")
         reader.stop()
+        return "interrupted"
 
     except GuardReaderError as exc:
         LOG.error("detection failed: %s", exc)
         reader.stop()
-        return 1
+        return "error"
 
     finally:
         for window in agg.flush():
             process_window(window)
 
-    return 0
+    if scheduled_stop:
+        return "scheduled_stop"
 
+    return 0
 
 def run_daemon_auto_loop(args: argparse.Namespace) -> int:
     model_path = Path(args.model_path)
-    next_bootstrap_attempt = time.time()
-    next_retrain_at = time.time() + RETRAIN_INTERVAL_SECONDS
+    now = time.time()
+    next_bootstrap_attempt = now + args.bootstrap_retry_seconds
+    next_retrain_at = now + args.retrain_interval_seconds
 
     LOG.info(
         "daemon auto mode started: bootstrap_retry=%ss retrain_interval=%ss",
-        BOOTSTRAP_RETRY_SECONDS,
-        RETRAIN_INTERVAL_SECONDS,
+        args.bootstrap_retry_seconds,
+        args.retrain_interval_seconds,
     )
 
     while True:
-        now = time.time()
-
         if model_path.exists():
+
             def should_stop_detect() -> bool:
                 return time.time() >= next_retrain_at
 
-            rc = run_detect_loop(
-                guardd_path=args.guardd_path,
+            result = run_detect_loop(
+                sensor_path=args.sensor_path,
                 db_path=args.db_path,
                 model_path=args.model_path,
                 print_windows=args.print_windows,
@@ -390,11 +597,58 @@ def run_daemon_auto_loop(args: argparse.Namespace) -> int:
                 no_store=args.no_store,
                 should_stop=should_stop_detect,
             )
-            if rc != 0:
-                return rc
 
-            LOG.info("weekly retrain window reached; pausing detection for training")
+            if result == "interrupted":
+                return 0
+
+            if result == "error":
+                return 1
+
+            if result == "scheduled_stop":
+                LOG.info("weekly retrain window reached; pausing detection for training")
+                trained = try_train_model(
+                    min_training_rows=args.min_training_rows,
+                    db_path=args.db_path,
+                    model_out=args.model_path,
+                    limit=args.limit,
+                    contamination=args.contamination,
+                    n_estimators=args.n_estimators,
+                    random_state=args.random_state,
+                    threshold_percentile=args.threshold_percentile,
+                    emit_json=False,
+                )
+
+                if trained:
+                    LOG.info("weekly retrain completed successfully")
+                else:
+                    LOG.info("weekly retrain skipped due to insufficient rows")
+
+                next_retrain_at = time.time() + args.retrain_interval_seconds
+                continue
+
+            return 0
+
+        def should_stop_collect() -> bool:
+            return time.time() >= next_bootstrap_attempt
+
+        result = run_collect_loop(
+            sensor_path=args.sensor_path,
+            db_path=args.db_path,
+            print_windows=args.print_windows,
+            print_features=args.print_features,
+            should_stop=should_stop_collect,
+        )
+
+        if result == "interrupted":
+            return 0
+
+        if result == "error":
+            return 1
+
+        if result == "scheduled_stop":
+            LOG.info("bootstrap training window reached; pausing collection for training")
             trained = try_train_model(
+                min_training_rows=args.min_training_rows,
                 db_path=args.db_path,
                 model_out=args.model_path,
                 limit=args.limit,
@@ -406,105 +660,95 @@ def run_daemon_auto_loop(args: argparse.Namespace) -> int:
             )
 
             if trained:
-                LOG.info("weekly retrain completed successfully")
+                LOG.info("bootstrap training succeeded; switching daemon to detect mode")
+                next_retrain_at = time.time() + args.retrain_interval_seconds
             else:
-                LOG.info("weekly retrain skipped due to insufficient rows")
+                next_bootstrap_attempt = time.time() + args.bootstrap_retry_seconds
+                LOG.info(
+                    "bootstrap training skipped; will retry in %s seconds",
+                    args.bootstrap_retry_seconds,
+                )
 
-            next_retrain_at = time.time() + RETRAIN_INTERVAL_SECONDS
             continue
 
-        def should_stop_collect() -> bool:
-            return time.time() >= next_bootstrap_attempt
-
-        rc = run_collect_loop(
-            guardd_path=args.guardd_path,
-            db_path=args.db_path,
-            print_windows=args.print_windows,
-            print_features=args.print_features,
-            should_stop=should_stop_collect,
-        )
-        if rc != 0:
-            return rc
-
-        LOG.info("bootstrap training window reached; pausing collection for training")
-        trained = try_train_model(
-            db_path=args.db_path,
-            model_out=args.model_path,
-            limit=args.limit,
-            contamination=args.contamination,
-            n_estimators=args.n_estimators,
-            random_state=args.random_state,
-            threshold_percentile=args.threshold_percentile,
-            emit_json=False,
-        )
-
-        if trained:
-            LOG.info("bootstrap training succeeded; switching daemon to detect mode")
-            next_retrain_at = time.time() + RETRAIN_INTERVAL_SECONDS
-        else:
-            next_bootstrap_attempt = time.time() + BOOTSTRAP_RETRY_SECONDS
-            LOG.info(
-                "bootstrap training skipped; will retry in %s seconds",
-                BOOTSTRAP_RETRY_SECONDS,
-            )
+        return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="guard")
-    sub = parser.add_subparsers(dest="command", required=True)
+    parser = argparse.ArgumentParser(prog="guardd")
+    sub = parser.add_subparsers(dest="command", required=False)
 
     ingest = sub.add_parser("ingest", help="read live events from guardd")
-    ingest.add_argument("--guardd-path", default="./ebpf/guardd", help="path to compiled guardd binary")
-    ingest.add_argument("--pretty", action="store_true", help="pretty-print parsed events")
-    ingest.add_argument("--debug", action="store_true", help="enable debug logging")
-    ingest.add_argument("--print-windows", action="store_true", help="print completed window summaries")
-    ingest.add_argument("--print-features", action="store_true", help="print feature vectors for completed windows")
+    ingest.add_argument("--sensor-path", default="./ebpf/guardd", help="path to compiled guardd binary")
+    ingest.add_argument("--pretty", action="store_true", default=argparse.SUPPRESS, help="pretty-print parsed events")
+    ingest.add_argument("--debug", action="store_true", default=argparse.SUPPRESS, help="enable debug logging")
+    ingest.add_argument("--print-windows", action="store_true", default=argparse.SUPPRESS, help="print completed window summaries")
+    ingest.add_argument("--print-features", action="store_true", default=argparse.SUPPRESS, help="print feature vectors for completed windows")
 
     collect = sub.add_parser("collect", help="collect live features into SQLite")
-    collect.add_argument("--guardd-path", default="./ebpf/guardd", help="path to compiled guardd binary")
+    collect.add_argument("--sensor-path", default="./ebpf/guardd", help="path to compiled guardd binary")
     collect.add_argument("--db-path", default="data/features.db", help="path to SQLite feature store")
-    collect.add_argument("--debug", action="store_true", help="enable debug logging")
-    collect.add_argument("--print-windows", action="store_true", help="print completed window summaries while collecting")
-    collect.add_argument("--print-features", action="store_true", help="print feature vectors while collecting")
+    collect.add_argument("--debug", action="store_true", default=argparse.SUPPRESS, help="enable debug logging")
+    collect.add_argument("--print-windows", action="store_true", default=argparse.SUPPRESS, help="print completed window summaries while collecting")
+    collect.add_argument("--print-features", action="store_true", default=argparse.SUPPRESS, help="print feature vectors while collecting")
 
     detect = sub.add_parser("detect", help="score live windows against trained model")
-    detect.add_argument("--guardd-path", default="./ebpf/guardd", help="path to compiled guardd binary")
+    detect.add_argument("--sensor-path", default="./ebpf/guardd", help="path to compiled guardd binary")
     detect.add_argument("--db-path", default="data/features.db", help="path to SQLite feature store")
     detect.add_argument("--model-path", default="data/model.bundle", help="path to trained model bundle")
-    detect.add_argument("--debug", action="store_true", help="enable debug logging")
-    detect.add_argument("--print-windows", action="store_true", help="print completed window summaries while detecting")
-    detect.add_argument("--print-features", action="store_true", help="print feature vectors while detecting")
-    detect.add_argument("--print-all-scores", action="store_true", help="print every scored window, not just anomalies")
-    detect.add_argument("--no-store", action="store_true", help="do not write scored feature vectors to SQLite")
+    detect.add_argument("--debug", action="store_true", default=argparse.SUPPRESS, help="enable debug logging")
+    detect.add_argument("--print-windows", action="store_true", default=argparse.SUPPRESS, help="print completed window summaries while detecting")
+    detect.add_argument("--print-features", action="store_true", default=argparse.SUPPRESS, help="print feature vectors while detecting")
+    detect.add_argument("--print-all-scores", action="store_true", default=argparse.SUPPRESS, help="print every scored window, not just anomalies")
+    detect.add_argument("--no-store", action="store_true", default=argparse.SUPPRESS, help="do not write scored feature vectors to SQLite")
 
     daemon = sub.add_parser("daemon", help="long-running guard daemon")
     daemon.add_argument("--mode", choices=("auto", "collect", "detect"), default="auto", help="daemon mode selection")
-    daemon.add_argument("--guardd-path", default="./ebpf/guardd", help="path to compiled guardd binary")
-    daemon.add_argument("--db-path", default="data/features.db", help="path to SQLite feature store")
-    daemon.add_argument("--model-path", default="data/model.bundle", help="path to trained model bundle")
+    daemon.add_argument("--sensor-path", default=argparse.SUPPRESS, help="path to compiled guardd binary")
+    daemon.add_argument("--db-path", default=argparse.SUPPRESS, help="path to SQLite feature store")
+    daemon.add_argument("--model-path", default=argparse.SUPPRESS, help="path to trained model bundle")
     daemon.add_argument("--debug", action="store_true", help="enable debug logging")
-    daemon.add_argument("--print-windows", action="store_true", help="print completed window summaries while running")
-    daemon.add_argument("--print-features", action="store_true", help="print feature vectors while running")
-    daemon.add_argument("--print-all-scores", action="store_true", help="print every scored window, not just anomalies")
-    daemon.add_argument("--no-store", action="store_true", help="do not write scored feature vectors to SQLite in detect mode")
-    daemon.add_argument("--limit", type=int, default=None, help="maximum number of rows to use for training")
+    daemon.add_argument("--print-windows", action="store_true", default=argparse.SUPPRESS, help="print completed window summaries while running")
+    daemon.add_argument("--print-features", action="store_true", default=argparse.SUPPRESS, help="print feature vectors while running")
+    daemon.add_argument("--print-all-scores", action="store_true", default=argparse.SUPPRESS, help="print every scored window, not just anomalies")
+    daemon.add_argument("--no-store", action="store_true", default=argparse.SUPPRESS,  help="do not write scored feature vectors to SQLite in detect mode")
+    daemon.add_argument("--limit", type=int, default=argparse.SUPPRESS, help="maximum number of rows to use for training")
     daemon.add_argument("--contamination", type=float, default=0.01, help="Isolation Forest contamination value")
-    daemon.add_argument("--n-estimators", type=int, default=200, help="number of trees for Isolation Forest")
-    daemon.add_argument("--random-state", type=int, default=42, help="random seed for training")
-    daemon.add_argument("--threshold-percentile", type=float, default=10.0, help="low-score percentile used as anomaly threshold")
+    daemon.add_argument("--n-estimators", type=int, default=argparse.SUPPRESS, help="number of trees for Isolation Forest")
+    daemon.add_argument("--random-state", type=int, default=argparse.SUPPRESS, help="random seed for training")
+    daemon.add_argument("--threshold-percentile", type=float, default=argparse.SUPPRESS, help="low-score percentile used as anomaly threshold")
 
     train = sub.add_parser("train", help="train Isolation Forest model from stored features")
-    train.add_argument("--db-path", default="data/features.db", help="path to SQLite feature store")
-    train.add_argument("--model-out", default="data/model.bundle", help="path to output model bundle")
-    train.add_argument("--limit", type=int, default=None, help="maximum number of rows to use for training")
-    train.add_argument("--contamination", type=float, default=0.01, help="Isolation Forest contamination value")
-    train.add_argument("--n-estimators", type=int, default=200, help="number of trees for Isolation Forest")
-    train.add_argument("--random-state", type=int, default=42, help="random seed for training")
-    train.add_argument("--threshold-percentile", type=float, default=10.0, help="low-score percentile used as anomaly threshold")
-    train.add_argument("--debug", action="store_true", help="enable debug logging")
+    train.add_argument("--db-path", default=argparse.SUPPRESS, help="path to SQLite feature store")
+    train.add_argument("--model-out", default=argparse.SUPPRESS, help="path to output model bundle")
+    train.add_argument("--limit", type=int, default=argparse.SUPPRESS, help="maximum number of rows to use for training")
+    train.add_argument("--contamination", type=float, default=argparse.SUPPRESS, help="Isolation Forest contamination value")
+    train.add_argument("--n-estimators", type=int, default=argparse.SUPPRESS, help="number of trees for Isolation Forest")
+    train.add_argument("--random-state", type=int, default=argparse.SUPPRESS, help="random seed for training")
+    train.add_argument("--threshold-percentile", type=float, default=argparse.SUPPRESS, help="low-score percentile used as anomaly threshold")
+    train.add_argument("--debug", action="store_true", default=argparse.SUPPRESS, help="enable debug logging")
+    train.add_argument(
+    "--min-training-rows",
+    type=int,
+    default=argparse.SUPPRESS,
+    help="minimum number of feature rows required before training",
+)
     tui = sub.add_parser("tui", help="browse recent and historical alerts")
-    tui.add_argument("--db-path", default="data/features.db", help="path to SQLite database")
-    tui.add_argument("--limit", type=int, default=200, help="max alerts to load")
+    tui.add_argument("--db-path", default=argparse.SUPPRESS, help="path to SQLite database")
+    tui.add_argument("--limit", type=int, default=argparse.SUPPRESS, help="max alerts to load")
+    daemon.add_argument(
+    "--bootstrap-retry-seconds",
+    type=int,
+    default=argparse.SUPPRESS,
+    help="seconds between bootstrap training attempts",
+)
+
+    daemon.add_argument(
+        "--retrain-interval-seconds",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="seconds between periodic retraining",
+    )
 
     return parser
 
@@ -514,6 +758,7 @@ def cmd_train(args: argparse.Namespace) -> int:
 
     try:
         trained = try_train_model(
+            min_training_rows=args.min_training_rows,
             db_path=args.db_path,
             model_out=args.model_out,
             limit=args.limit,
@@ -536,7 +781,7 @@ def cmd_train(args: argparse.Namespace) -> int:
 def cmd_ingest(args: argparse.Namespace) -> int:
     _configure_logging(args.debug)
 
-    reader = GuarddProcessReader(Path(args.guardd_path))
+    reader = GuarddProcessReader(Path(args.sensor_path))
     agg = HostAggregator()
 
     try:
@@ -576,7 +821,7 @@ def cmd_ingest(args: argparse.Namespace) -> int:
 def cmd_collect(args: argparse.Namespace) -> int:
     _configure_logging(args.debug)
     return run_collect_loop(
-        guardd_path=args.guardd_path,
+        sensor_path=args.sensor_path,
         db_path=args.db_path,
         print_windows=args.print_windows,
         print_features=args.print_features,
@@ -586,7 +831,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
 def cmd_detect(args: argparse.Namespace) -> int:
     _configure_logging(args.debug)
     return run_detect_loop(
-        guardd_path=args.guardd_path,
+        sensor_path=args.sensor_path,
         db_path=args.db_path,
         model_path=args.model_path,
         print_windows=args.print_windows,
@@ -601,7 +846,7 @@ def cmd_daemon(args: argparse.Namespace) -> int:
 
     if args.mode == "collect":
         return run_collect_loop(
-            guardd_path=args.guardd_path,
+            sensor_path=args.sensor_path,
             db_path=args.db_path,
             print_windows=args.print_windows,
             print_features=args.print_features,
@@ -609,7 +854,7 @@ def cmd_daemon(args: argparse.Namespace) -> int:
 
     if args.mode == "detect":
         return run_detect_loop(
-            guardd_path=args.guardd_path,
+            sensor_path=args.sensor_path,
             db_path=args.db_path,
             model_path=args.model_path,
             print_windows=args.print_windows,
@@ -627,6 +872,14 @@ def cmd_tui(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+
+    try:
+        config, config_path = load_config()
+    except ConfigError as exc:
+        parser.error(str(exc))
+        return 2
+
+    args = resolve_args(args, config)
 
     if args.command == "ingest":
         return cmd_ingest(args)

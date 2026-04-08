@@ -8,6 +8,13 @@ guardd collects low-level system events (process execution, network activity), a
 
 Output is emitted as structured NDJSON for easy integration with SIEM pipelines.
 
+### Quick Start
+
+```bash
+sudo ./install.sh  
+sudo systemctl start guardd.service  
+guardd tui 
+```
 
 ### Features
 
@@ -15,9 +22,10 @@ eBPF-based kernel telemetry
 Time-windowed behavioral feature aggregation  
 Isolation Forest anomaly detection  
 Automatic model training and retraining  
+Config handled via config.toml  
 NDJSON output  
 Designed to run as a systemd service  
-
+TUI for checking anomalies  
 
 ### Installation
 
@@ -31,7 +39,7 @@ cd guardd
 #### 2. Run the install script
 
 ```
-sudo bash install-systemd.sh
+sudo bash install.sh
 ```
 
 This will:
@@ -43,6 +51,107 @@ Install the package
 Build eBPF components  
 Install the systemd service  
 
+
+### Configuration
+
+guardd supports configuration via a `config.toml` file.
+
+By default, the daemon looks for:
+
+```
+/opt/guardd/config.toml
+```
+
+#### Example
+
+```toml
+[daemon]
+mode = "auto"
+bootstrap_retry_seconds = 60
+retrain_interval_seconds = 604800
+
+[training]
+min_training_rows = 1
+contamination = 0.01
+n_estimators = 200
+threshold_percentile = 10.0
+
+[paths]
+db_path = "/opt/guardd/data/features.db"
+model_path = "/opt/guardd/data/model.bundle"
+guardd_path = "/opt/guardd/ebpf/guardd"
+```
+
+#### [daemon]
+
+Controls the lifecycle of guardd.
+
+ mode
+   `"auto"` → full pipeline (collect → train → detect)
+   `"collect"` → only collect data
+   `"detect"` → only run detection (requires model)
+
+ bootstrap_retry_seconds
+   How often guardd attempts initial training when no model exists
+   During this phase, guardd collects data and periodically pauses to try training
+   Lower for testing, higher for production
+
+ retrain_interval_seconds
+   How often the model is retrained after initial bootstrap
+   Default: 7 days (604800 seconds)
+
+
+#### [training]
+
+Controls model behavior and requirements.
+
+ min_training_rows
+   Minimum number of feature windows required to train
+   If not met, training fails and will retry later
+   Example:
+     `1` → fast testing
+     `100+` → realistic baseline
+
+ contamination
+   Expected proportion of anomalies in the data
+   Passed directly to Isolation Forest
+   Typical values: `0.01`–`0.05`
+
+ n_estimators
+   Number of trees in the Isolation Forest
+   Higher = more accurate, slower training
+
+ threshold_percentile
+   Determines anomaly cutoff score
+   Lower = more aggressive detection
+   Example:
+     `10.0` → bottom 10% considered anomalous
+
+
+#### [paths]
+
+Controls where guardd reads/writes data.
+
+ db_path
+   SQLite database storing feature vectors and anomalies
+
+ model_path
+   Serialized model bundle used for detection
+
+ guardd_path
+   Path to the eBPF collector binary
+
+
+#### Notes
+
+ Config values override CLI defaults  
+ CLI arguments can still override config if explicitly provided  
+ For quick testing:
+
+```toml
+bootstrap_retry_seconds = 60
+min_training_rows = 1
+```
 
 ### How it works
 
@@ -92,45 +201,34 @@ guardd includes a temrinal UI for browsing recent alerts and searching anomalies
 
 To launch: (after starting guardd.service)
 ```bash
-/opt/guardd/.venv/bin/python -m guard tui --db-path /opt/guardd/data/features.db
+guardd tui
 ```
 
 ### Running without systemd
 
-You can run `guardd` directly from the command line without installing the systemd service.
+You can run `guardd` directly from the command line without installing the systemd service. This can be configured to run with other init systems  
 
 #### Run full daemon 
 
 ```bash
-sudo /opt/guardd/.venv/bin/python -m guard daemon \
-  --mode auto \
-  --guardd-path /opt/guardd/ebpf/guardd \
-  --db-path /opt/guardd/data/features.db \
-  --model-path /opt/guardd/data/model.bundle
+sudo guardd daemon
 ```
 
 ### Run individual components
 
 Collect data:
 ```bash
-sudo /opt/guardd/.venv/bin/python -m guard collect \
-  --guardd-path /opt/guardd/ebpf/guardd \
-  --db-path /opt/guardd/data/features.db
+sudo guardd collect
 ```
 
 Train model:
 ```bash
-sudo /opt/guardd/.venv/bin/python -m guard train \
-  --db-path /opt/guardd/data/features.db \
-  --model-out /opt/guardd/data/model.bundle
+sudo guardd train
 ```
 
 Run Detection:
 ```bash
-sudo /opt/guardd/.venv/bin/python -m guard detect \
-  --guardd-path /opt/guardd/ebpf/guardd \
-  --db-path /opt/guardd/data/features.db \
-  --model-path /opt/guardd/data/model.bundle
+sudo guardd detect
 ```
 
 ### Dependencies

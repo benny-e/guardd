@@ -77,6 +77,7 @@ def _compute_threshold(scores: list[float], percentile: float) -> float:
 def train_isolation_forest(
     db_path: str | Path,
     *,
+    min_training_rows: int = 10,
     model_out_path: str | Path,
     feature_version: int = FEATURE_VERSION,
     limit: int | None = None,
@@ -94,9 +95,9 @@ def train_isolation_forest(
     X = dataset["X"]
     rows = dataset["rows"]
 
-    if rows < 10:
+    if rows < min_training_rows:
         raise ValueError(
-            f"not enough training rows: need at least 10, got {rows}"
+            f"not enough training rows: need at least {min_training_rows}, got {rows}"
         )
 
     baseline_snapshot = _build_baseline_snapshot(dataset["metadata"])

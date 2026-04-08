@@ -1,0 +1,28 @@
+[paths]
+sensor_path = "./ebpf/guardd"
+db_path = "data/features.db"
+model_path = "data/model.bundle"
+
+[logging]
+debug = false
+
+[daemon]
+mode = "auto"
+print_windows = false
+print_features = false
+print_all_scores = false
+no_store = false
+
+bootstrap_retry_seconds = 600
+retrain_interval_seconds = 604800
+
+[train]
+min_training_rows = 10
+limit = 50000
+contamination = 0.01
+n_estimators = 200
+random_state = 42
+threshold_percentile = 10.0
+
+[tui]
+limit = 200

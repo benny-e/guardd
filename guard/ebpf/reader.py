@@ -75,15 +75,15 @@ def event_to_dict(event: GuardEvent) -> dict:
 class GuarddProcessReader:
     def __init__(
         self,
-        guardd_path: str | Path,
+        sensor_path: str | Path,
         extra_args: Iterable[str] | None = None,
     ) -> None:
-        self.guardd_path = str(guardd_path)
+        self.sensor_path = str(sensor_path)
         self.extra_args = list(extra_args or [])
         self.proc: subprocess.Popen[str] | None = None
 
     def command(self) -> list[str]:
-        return [self.guardd_path, "--json", *self.extra_args]
+        return [self.sensor_path, "--json", *self.extra_args]
 
     def start(self) -> None:
         if self.proc is not None:
