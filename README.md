@@ -4,28 +4,19 @@ Machine learning driven behavioral anomaly detection for Linux using eBPF + Isol
 </p>
 
 ---
-
-### Warning
-
-> This project is still in development  
-> Features and detection accuracy are actively being improved  
-> Feedback, suggestions, and contributions are welcome  
-
----
-
 guardd collects low-level system events (process execution, network activity), aggregates them into time-windowed feature vectors, and detects anomalous behavior using a machine learning model.  
 
-guardd is focused on detected **unknown threats**. focused on detecting malicious behavior, not signatures  
-
-Output is emitted as structured NDJSON for easy integration with SIEM pipelines.
-
-
+guardd is focused on detected **unknown threats**  
 ---
-### Example TUI output
 <p align="center">
   <img src="assets/guarddtui.png" width="800"/>
 </p>
 
+---
+> [!WARNING]
+> This project is still in development  
+> Features and detection accuracy are actively being improved  
+> Feedback, suggestions, and contributions are welcome  
 ---
 
 ### Features
