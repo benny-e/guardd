@@ -7,6 +7,7 @@ Machine learning driven behavioral anomaly detection for Linux using eBPF + Isol
 guardd collects low-level system events (process execution, network activity), aggregates them into time-windowed feature vectors, and detects anomalous behavior using a machine learning model.  
 
 guardd is focused on detected **unknown threats**  
+
 ---
 <p align="center">
   <img src="assets/guarddtui.png" width="800"/>
