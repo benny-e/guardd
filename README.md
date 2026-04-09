@@ -1,13 +1,16 @@
-<h1 align="center">GUARDD</h1>
+<h1 align="center">guardd</h1>
 <p align="center">
-AI-driven behavioral anomaly detection for Linux using eBPF + Isolation Forest
+Machine learning driven behavioral anomaly detection for Linux using eBPF + Isolation Forest
 </p>
 
 ---
-## Warning
 
-> ![status](https://img.shields.io/badge/status-in%20progress-yellow)
->
+<p align="center">
+  <img src="assets/guarddtui.png" width="800"/>
+</p>
+
+### Warning
+
 > This project is still in development  
 > Features and detection accuracy are actively being improved  
 > Feedback, suggestions, and contributions are welcome  
@@ -22,9 +25,6 @@ Output is emitted as structured NDJSON for easy integration with SIEM pipelines.
 
 ---
 
-![guardd tui](assets/guarddtui.png)
-
----
 ### Features
 
 eBPF-based kernel telemetry  
