@@ -1,15 +1,30 @@
-## guardd
+<h1 align="center">GUARDD</h1>
+<p align="center">
+AI-driven behavioral anomaly detection for Linux using eBPF + Isolation Forest
+</p>
 
-AI-driven behavioral anomaly detection for Linux using eBPF and Isolation Forest.
+---
+## Warning
 
-Note: This is still in progress. Features are still being added/tested.   
+> ![status](https://img.shields.io/badge/status-in%20progress-yellow)
+>
+> This project is still in development  
+> Features and detection accuracy are actively being improved  
+> Feedback, suggestions, and contributions are welcome  
 
-guardd collects low-level system events (process execution, network activity), aggregates them into time-windowed feature vectors, and detects anomalous behavior using a machine learning model.
+---
+
+guardd collects low-level system events (process execution, network activity), aggregates them into time-windowed feature vectors, and detects anomalous behavior using a machine learning model.  
+
+guardd is focused on detected **unknown threats**. focused on detecting malicious behavior, not signatures  
 
 Output is emitted as structured NDJSON for easy integration with SIEM pipelines.
 
 ---
 
+![guardd tui](assets/guarddtui.png)
+
+---
 ### Features
 
 eBPF-based kernel telemetry  
@@ -45,6 +60,7 @@ The model is retrained automatically once per week
 Detection resumes immediately after retraining with the updated model  
 
 ---
+
 ### Installation
 
 #### 1. Clone the repository
@@ -94,7 +110,7 @@ journalctl -u guardd.service -f
 
 #### Terminal TUI
 
-guardd includes a temrinal UI for browsing recent alerts and searching anomalies  
+guardd includes a terminal UI for browsing recent alerts and searching anomalies  
 
 To launch: (after starting guardd.service)
 ```bash
