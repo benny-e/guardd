@@ -1,8 +1,5 @@
 <h1 align="center">guardd</h1>
-<p align="center">
-
-Machine learning driven behavioral anomaly detection for Linux using eBPF + Isolation Forest
-</p>
+<p align="center">Machine learning driven behavioral anomaly detection for Linux using eBPF + Isolation Forest</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-0.1.0-eab308">
