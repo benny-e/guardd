@@ -2,7 +2,7 @@
 <p align="center">Machine learning driven behavioral anomaly detection for Linux using eBPF + Isolation Forest</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.0-eab308">
+  <img src="https://img.shields.io/badge/version-0.1.1-eab308">
   <img src="https://img.shields.io/badge/status-experimental-f97316">
   <img src="https://img.shields.io/badge/license-MIT-22c55e">
   <img src="https://img.shields.io/badge/python-3.11+-3b82f6">
