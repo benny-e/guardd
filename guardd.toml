@@ -13,11 +13,11 @@ print_features = false
 print_all_scores = false
 no_store = false
 
-bootstrap_retry_seconds = 600
+bootstrap_retry_seconds = 82800
 retrain_interval_seconds = 604800
 
 [train]
-min_training_rows = 10
+min_training_rows = 1380
 limit = 50000
 contamination = 0.01
 n_estimators = 200

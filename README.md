@@ -1,14 +1,27 @@
 <h1 align="center">guardd</h1>
 <p align="center">
+
 Machine learning driven behavioral anomaly detection for Linux using eBPF + Isolation Forest
 </p>
 
----
-guardd collects low-level system events (process execution, network activity), aggregates them into time-windowed feature vectors, and detects anomalous behavior using a machine learning model.  
+<p align="center">
+  <img src="https://img.shields.io/badge/version-0.1.0-eab308">
+  <img src="https://img.shields.io/badge/status-experimental-f97316">
+  <img src="https://img.shields.io/badge/license-MIT-22c55e">
+  <img src="https://img.shields.io/badge/python-3.11+-3b82f6">
+  <img src="https://img.shields.io/badge/platform-linux-9ca3af">
+  <img src="https://img.shields.io/badge/telemetry-eBPF-ef4444">
+  <img src="https://img.shields.io/badge/architecture-eBPF%20%2B%20ML-1f2937">
+</p>
 
-guardd is focused on detected **unknown threats**  
+---
+
+Guardd collects low-level system events (process execution, network activity), aggregates them into time-windowed feature vectors, and detects anomalous behavior using a machine learning model.  
+
+Guardd is focused on detecting **unknown threats**  
 
 ---
+
 <p align="center">
   <img src="assets/guarddtui.png" width="800"/>
 </p>
@@ -20,19 +33,6 @@ guardd is focused on detected **unknown threats**
 > Feedback, suggestions, and contributions are welcome  
 ---
 
-### Features
-
-eBPF-based kernel telemetry  
-Time-windowed behavioral feature aggregation  
-Isolation Forest anomaly detection  
-Automatic model training and retraining  
-Config handled via config.toml  
-NDJSON output  
-Designed to run as a systemd service  
-TUI for checking anomalies  
-
----
-
 ### How it works
 
 guardd runs as a single systemd service that manages the full lifecycle of data collection, training, and detection.
@@ -40,7 +40,7 @@ guardd runs as a single systemd service that manages the full lifecycle of data 
 On startup:
 
 If no model exists, guardd begins collecting baseline behavioral data  
-It attempts to train a model every 10 minutes until enough data is available  
+It collects 1 day (default) of data to initially train on    
 Once training succeeds, it switches automatically into detection mode  
 
 During operation:
@@ -176,17 +176,17 @@ guardd_path = "/opt/guardd/ebpf/guardd"
 Controls the lifecycle of guardd.
 
  mode  
-   -`"auto"` → full pipeline (collect → train → detect)  
-   -`"collect"` → only collect data  
-   -`"detect"` → only run detection (requires model)  
+   -- `"auto"` → full pipeline (collect → train → detect)  
+   -- `"collect"` → only collect data  
+   -- `"detect"` → only run detection (requires model)  
 
  bootstrap_retry_seconds  
-   -How often guardd attempts initial training when no model exists  
-   -During this phase, guardd collects data and periodically pauses to try training  
+   -- How often guardd attempts initial training when no model exists  
+   -- During this phase, guardd collects data and periodically pauses to try training  
 
  retrain_interval_seconds  
-   -How often the model is retrained after initial bootstrap  
-   -Default: 7 days (604800 seconds)  
+   -- How often the model is retrained after initial bootstrap  
+   -- Default: 7 days (default)  
 
 
 #### [training]
@@ -194,21 +194,21 @@ Controls the lifecycle of guardd.
 Controls model behavior and requirements.  
 
  min_training_rows  
-   -Minimum number of feature windows required to train  
-   -If not met, training fails and will retry later  
+   -- Minimum number of feature windows required to train  
+   -- If not met, training fails and will retry later  
 
  contamination  
-   -Expected proportion of anomalies in the data  
-   -Passed directly to Isolation Forest  
-   -Typical values: `0.01`–`0.05`  
+   -- Expected proportion of anomalies in the data  
+   -- Passed directly to Isolation Forest  
+   -- Typical values: `0.01`–`0.05`  
 
  n_estimators  
-   -Number of trees in the Isolation Forest  
-   -Higher = more accurate, slower training  
+   -- Number of trees in the Isolation Forest  
+   -- Higher = more accurate, slower training  
 
  threshold_percentile  
-   -Determines anomaly cutoff score  
-   -Lower = more aggressive detection  
+   -- Determines anomaly cutoff score  
+   -- Lower = more aggressive detection  
 
 
 #### [paths]
@@ -216,25 +216,24 @@ Controls model behavior and requirements.
 Controls where guardd reads/writes data.  
 
  db_path  
-   -SQLite database storing feature vectors and anomalies
+   -- SQLite database storing feature vectors and anomalies
 
  model_path  
-   -Serialized model bundle used for detection
+   -- Serialized model bundle used for detection
 
  guardd_path  
-   -Path to the eBPF collector binary
+   -- Path to the eBPF collector binary
 
 
 #### Notes
 
  Config values override CLI defaults   
  CLI arguments can still override config if explicitly provided  
+ Model accuracy relies heavily on good training data. Longer training times will result in a more accurate detector  
 
 ---
 
 ### Dependencies
-
-#### System
 
 python3  
 python3-venv  
