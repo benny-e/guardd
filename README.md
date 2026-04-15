@@ -186,7 +186,7 @@ Controls the lifecycle of guardd.
    -- Default: 7 days (default)  
 
 
-#### [training]
+#### [train]
 
 Controls model behavior and requirements.  
 
