@@ -504,6 +504,7 @@ def run_detect_loop(
     def process_window(window) -> bool:
         nonlocal completed_window_count, scheduled_stop
 
+        # Keep novelty relative to the model's training snapshot until reload.
         vector = vectorize_window(window, baseline=reloader.baseline)
 
         if store is not None:
@@ -517,7 +518,6 @@ def run_detect_loop(
         )
 
         result = reloader.score_feature_vector(vector)
-        reloader.baseline.observe_window(window)
 
         if result.is_anomaly:
             record = _anomaly_record(result)

@@ -46,6 +46,8 @@ System activity is continuously aggregated into time windows and converted into 
 Each window is scored by the trained Isolation Forest model  
 Anomalies are emitted as NDJSON  
 
+Detection keeps the baseline snapshot fixed until a new model is loaded, so repeated unseen behavior remains new to the current model.
+
 Ongoing:
 
 The model is retrained automatically once per week  
@@ -243,4 +245,3 @@ bpftool
 build-essential  
 pkg-config  
 sqlite3  
-
