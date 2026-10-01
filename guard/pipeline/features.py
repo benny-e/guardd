@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from guard.pipeline.aggregator import WindowState
 from guard.pipeline.baseline import BaselineState
 
-
 FEATURE_VERSION = 3
 
 FEATURE_NAMES = [
@@ -24,6 +23,13 @@ FEATURE_NAMES = [
     "new_parent_child_counts",
     "new_parent_child_ratio",
 ]
+
+NOVELTY_FEATURE_NAMES = (
+    "new_comm_count",
+    "new_file_count",
+    "new_parent_child_counts",
+    "new_parent_child_ratio",
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -58,7 +64,9 @@ def vectorize_window(
         new_parent_child = baseline.new_parent_child(window)
 
     if window.unique_parent_child:
-        new_parent_child_ratio = float(len(new_parent_child)) / float(len(window.unique_parent_child))
+        new_parent_child_ratio = float(len(new_parent_child)) / float(
+            len(window.unique_parent_child)
+        )
     else:
         new_parent_child_ratio = 0.0
 
@@ -91,9 +99,9 @@ def vectorize_window(
         "new_comms": new_comms,
         "new_files": new_files,
         "new_parent_child": [
-            {"ppid": ppid, "comm": comm}
-            for ppid, comm in new_parent_child
+            {"ppid": ppid, "comm": comm} for ppid, comm in new_parent_child
         ],
+        "novelty_scored": baseline is not None,
     }
 
     return FeatureVector(
@@ -101,4 +109,58 @@ def vectorize_window(
         window_start_ms=window.window_start_ms,
         values=values,
         metadata=metadata,
+    )
+
+
+def window_context_from_metadata(metadata: dict[str, object]) -> WindowState:
+    """Recover the observed identities needed to recalculate novelty.
+
+    Require context explicitly: missing metadata must not silently become an
+    empty baseline. Version-3 rows already contain these fields.
+    """
+    try:
+        comms = metadata["unique_comms"]
+        files = metadata["unique_files"]
+        pairs = metadata["unique_parent_child"]
+        if not all(isinstance(items, list) for items in (comms, files, pairs)):
+            raise ValueError("identity fields must be lists")
+        if not all(isinstance(item, str) for item in (*comms, *files)):
+            raise ValueError("comm and file identities must be strings")
+        parent_child = {(int(item["ppid"]), str(item["comm"])) for item in pairs}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(
+            "stored window lacks valid identity metadata; collect new data"
+        ) from exc
+
+    return WindowState(
+        window_start_ms=0,
+        unique_comms=set(comms),
+        unique_files=set(files),
+        unique_parent_child=parent_child,
+    )
+
+
+def rebase_feature_vector(
+    feature: FeatureVector, baseline: BaselineState
+) -> FeatureVector:
+    """Recompute novelty using the same extractor as live detection.
+
+    Activity counts are retained exactly; stored novelty from collection or
+    another model's baseline is never used for training.
+    """
+    if feature.feature_version != FEATURE_VERSION or len(feature.values) != len(
+        FEATURE_NAMES
+    ):
+        raise ValueError("unsupported stored feature schema; collect new data")
+    context = window_context_from_metadata(feature.metadata)
+    recalculated = vectorize_window(context, baseline=baseline)
+    values = list(feature.values)
+    for name in NOVELTY_FEATURE_NAMES:
+        index = FEATURE_NAMES.index(name)
+        values[index] = recalculated.values[index]
+    metadata = dict(feature.metadata)
+    for name in ("new_comms", "new_files", "new_parent_child", "novelty_scored"):
+        metadata[name] = recalculated.metadata[name]
+    return FeatureVector(
+        feature.feature_version, feature.window_start_ms, values, metadata
     )

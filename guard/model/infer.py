@@ -4,8 +4,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from guard.model.train import load_model_bundle
-from guard.pipeline.features import FeatureVector
+from guard.model.train import MODEL_BUNDLE_VERSION, NOVELTY_POLICY, load_model_bundle
+from guard.pipeline.features import FEATURE_NAMES, FEATURE_VERSION, FeatureVector
+
+
+class ModelCompatibilityError(ValueError):
+    """The model must be rebuilt before it can score current features."""
 
 
 @dataclass(slots=True, frozen=True)
@@ -22,6 +26,17 @@ class InferenceResult:
 class ModelInferer:
     def __init__(self, model_path: str | Path) -> None:
         bundle = load_model_bundle(model_path)
+
+        if (
+            bundle.get("model_bundle_version") != MODEL_BUNDLE_VERSION
+            or bundle.get("novelty_policy") != NOVELTY_POLICY
+            or bundle.get("feature_version") != FEATURE_VERSION
+            or bundle.get("feature_names") != FEATURE_NAMES
+        ):
+            raise ModelCompatibilityError(
+                "model uses an incompatible baseline or feature schema; "
+                "run 'guardd train' to rebuild it from stored windows"
+            )
 
         self.bundle = bundle
         self.model = __import__("pickle").loads(bundle["model_pickle"])

@@ -8,17 +8,20 @@ from collections.abc import Callable
 from pathlib import Path
 
 from guard.config import ConfigError, deep_get, load_config
-from guard.storage.anomaly_store import AnomalyStore
-from guard.tui import run_tui
-from guard.ebpf.reader import GuardReaderError, GuarddProcessReader, event_to_dict
-from guard.model.infer import ModelInferer
-from guard.model.train import bundle_summary_json, train_isolation_forest
+from guard.ebpf.reader import GuarddProcessReader, GuardReaderError, event_to_dict
+from guard.model.infer import ModelCompatibilityError, ModelInferer
+from guard.model.train import (
+    DEFAULT_BASELINE_FRACTION,
+    bundle_summary_json,
+    train_isolation_forest,
+)
 from guard.pipeline.aggregator import HostAggregator
 from guard.pipeline.baseline import BaselineState
-from guard.pipeline.features import vectorize_window
-from guard.storage.feature_store import FeatureStore
 from guard.pipeline.explain import explain_anomaly
-from guard.pipeline.features import FEATURE_NAMES
+from guard.pipeline.features import FEATURE_NAMES, vectorize_window
+from guard.storage.anomaly_store import AnomalyStore
+from guard.storage.feature_store import FeatureStore
+from guard.tui import run_tui
 
 LOG = logging.getLogger(__name__)
 
@@ -89,6 +92,11 @@ def _resolve_train_settings(args: argparse.Namespace, config: dict) -> None:
         getattr(args, "threshold_percentile", None),
         deep_get(config, "train", "threshold_percentile"),
         10.0,
+    )
+    args.baseline_fraction = _pick(
+        getattr(args, "baseline_fraction", None),
+        deep_get(config, "train", "baseline_fraction"),
+        DEFAULT_BASELINE_FRACTION,
     )
 
 
@@ -336,6 +344,7 @@ def try_train_model(
     n_estimators: int = 200,
     random_state: int = 42,
     threshold_percentile: float = 10.0,
+    baseline_fraction: float = DEFAULT_BASELINE_FRACTION,
     prune_retention_days: int = 45,
     emit_json: bool = False,
 ) -> bool:
@@ -349,6 +358,7 @@ def try_train_model(
             n_estimators=n_estimators,
             random_state=random_state,
             threshold_percentile=threshold_percentile,
+            baseline_fraction=baseline_fraction,
         )
     except ValueError as exc:
         if _is_not_enough_training_data(exc):
@@ -365,8 +375,9 @@ def try_train_model(
         print(bundle_summary_json(model_out))
 
     LOG.info(
-        "training succeeded: rows=%s threshold=%s model=%s deleted_old_rows=%s",
+        "training succeeded: rows=%s baseline_rows=%s threshold=%s model=%s deleted_old_rows=%s",
         result["rows"],
+        result["baseline_rows"],
         result["threshold_score"],
         model_out,
         deleted_rows,
@@ -384,8 +395,9 @@ class ReloadableInferer:
 
     def reload(self) -> None:
         inferer = ModelInferer(self.model_path)
+        baseline = BaselineState.from_dict(inferer.bundle["baseline_snapshot"])
         self.inferer = inferer
-        self.baseline = BaselineState.from_dict(inferer.bundle["baseline_snapshot"])
+        self.baseline = baseline
         self.last_mtime_ns = self.model_path.stat().st_mtime_ns
         LOG.info("loaded model bundle: %s", self.model_path)
 
@@ -418,7 +430,6 @@ def run_collect_loop(
     agg = HostAggregator()
     store = _make_store(db_path)
 
-    baseline = BaselineState()
     scheduled_stop = False
 
     LOG.info("collecting features into %s", db_path)
@@ -428,9 +439,10 @@ def run_collect_loop(
             completed = agg.push(event)
 
             for window in completed:
-                vector = vectorize_window(window, baseline=baseline)
+                # Store observations only. Training assigns one frozen reference
+                # and recalculates novelty from metadata, including across restarts.
+                vector = vectorize_window(window)
                 store.insert_feature_vector(vector)
-                baseline.observe_window(window)
                 _print_window_and_feature(
                     window,
                     vector,
@@ -459,9 +471,8 @@ def run_collect_loop(
 
     finally:
         for window in agg.flush():
-            vector = vectorize_window(window, baseline=baseline)
+            vector = vectorize_window(window)
             store.insert_feature_vector(vector)
-            baseline.observe_window(window)
             _print_window_and_feature(
                 window,
                 vector,
@@ -491,7 +502,10 @@ def run_detect_loop(
     try:
         reloader = ReloadableInferer(model_path)
     except FileNotFoundError:
-        LOG.error("model.bundle not found — run 'guard collect' and 'guard train' first")
+        LOG.error("model.bundle not found — run 'guardd collect' and 'guardd train' first")
+        return 1
+    except ModelCompatibilityError as exc:
+        LOG.error("cannot start detection: %s", exc)
         return 1
 
     reader = GuarddProcessReader(Path(sensor_path))
@@ -578,6 +592,24 @@ def run_daemon_auto_loop(args: argparse.Namespace) -> int:
     now = time.time()
     next_bootstrap_attempt = now + args.bootstrap_retry_seconds
     next_retrain_at = now + args.retrain_interval_seconds
+    rebuild_required = False
+
+    if model_path.exists():
+        try:
+            ModelInferer(model_path)
+        except ModelCompatibilityError as exc:
+            LOG.info("rebuilding legacy model from stored observations: %s", exc)
+            rebuild_required = not try_train_model(
+                min_training_rows=args.min_training_rows,
+                db_path=args.db_path,
+                model_out=args.model_path,
+                limit=args.limit,
+                contamination=args.contamination,
+                n_estimators=args.n_estimators,
+                random_state=args.random_state,
+                threshold_percentile=args.threshold_percentile,
+                baseline_fraction=args.baseline_fraction,
+            )
 
     LOG.info(
         "daemon auto mode started: bootstrap_retry=%ss retrain_interval=%ss",
@@ -586,10 +618,10 @@ def run_daemon_auto_loop(args: argparse.Namespace) -> int:
     )
 
     while True:
-        if model_path.exists():
+        if model_path.exists() and not rebuild_required:
 
-            def should_stop_detect() -> bool:
-                return time.time() >= next_retrain_at
+            def should_stop_detect(deadline: float = next_retrain_at) -> bool:
+                return time.time() >= deadline
 
             result = run_detect_loop(
                 sensor_path=args.sensor_path,
@@ -619,6 +651,7 @@ def run_daemon_auto_loop(args: argparse.Namespace) -> int:
                     n_estimators=args.n_estimators,
                     random_state=args.random_state,
                     threshold_percentile=args.threshold_percentile,
+                    baseline_fraction=args.baseline_fraction,
                     emit_json=False,
                 )
 
@@ -632,8 +665,8 @@ def run_daemon_auto_loop(args: argparse.Namespace) -> int:
 
             return 0
 
-        def should_stop_collect() -> bool:
-            return time.time() >= next_bootstrap_attempt
+        def should_stop_collect(deadline: float = next_bootstrap_attempt) -> bool:
+            return time.time() >= deadline
 
         result = run_collect_loop(
             sensor_path=args.sensor_path,
@@ -660,10 +693,12 @@ def run_daemon_auto_loop(args: argparse.Namespace) -> int:
                 n_estimators=args.n_estimators,
                 random_state=args.random_state,
                 threshold_percentile=args.threshold_percentile,
+                baseline_fraction=args.baseline_fraction,
                 emit_json=False,
             )
 
             if trained:
+                rebuild_required = False
                 LOG.info("bootstrap training succeeded; switching daemon to detect mode")
                 next_retrain_at = time.time() + args.retrain_interval_seconds
             else:
@@ -721,6 +756,8 @@ def build_parser() -> argparse.ArgumentParser:
     daemon.add_argument("--n-estimators", type=int, default=argparse.SUPPRESS, help="number of trees for Isolation Forest")
     daemon.add_argument("--random-state", type=int, default=argparse.SUPPRESS, help="random seed for training")
     daemon.add_argument("--threshold-percentile", type=float, default=argparse.SUPPRESS, help="low-score percentile used as anomaly threshold")
+    daemon.add_argument("--baseline-fraction", type=float, default=argparse.SUPPRESS, help="earliest fraction of windows reserved for the fixed baseline (default: 0.2)")
+    daemon.add_argument("--min-training-rows", type=int, default=argparse.SUPPRESS, help="minimum model-fit windows after reserving baseline windows")
 
     train = sub.add_parser("train", help="train Isolation Forest model from stored features")
     train.add_argument("--db-path", default=argparse.SUPPRESS, help="path to SQLite feature store")
@@ -730,12 +767,13 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--n-estimators", type=int, default=argparse.SUPPRESS, help="number of trees for Isolation Forest")
     train.add_argument("--random-state", type=int, default=argparse.SUPPRESS, help="random seed for training")
     train.add_argument("--threshold-percentile", type=float, default=argparse.SUPPRESS, help="low-score percentile used as anomaly threshold")
+    train.add_argument("--baseline-fraction", type=float, default=argparse.SUPPRESS, help="earliest fraction of windows reserved for the fixed baseline (default: 0.2)")
     train.add_argument("--debug", action="store_true", default=argparse.SUPPRESS, help="enable debug logging")
     train.add_argument(
     "--min-training-rows",
     type=int,
     default=argparse.SUPPRESS,
-    help="minimum number of feature rows required before training",
+    help="minimum model-fit windows after reserving baseline windows",
 )
     tui = sub.add_parser("tui", help="browse recent and historical alerts")
     tui.add_argument("--db-path", default=argparse.SUPPRESS, help="path to SQLite database")
@@ -774,6 +812,7 @@ def cmd_train(args: argparse.Namespace) -> int:
             n_estimators=args.n_estimators,
             random_state=args.random_state,
             threshold_percentile=args.threshold_percentile,
+            baseline_fraction=args.baseline_fraction,
             emit_json=True,
         )
     except ValueError as exc:
@@ -896,7 +935,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        config, config_path = load_config()
+        config, _config_path = load_config()
     except ConfigError as exc:
         parser.error(str(exc))
         return 2

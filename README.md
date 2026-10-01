@@ -22,7 +22,8 @@ guardd runs as a single systemd service that manages the full lifecycle of data 
 On startup:
 
 If no model exists, guardd begins collecting baseline behavioral data  
-It collects 1 day (default) of data to initially train on    
+It collects enough windows for a reference baseline and a later model-training period.
+
 Once training succeeds, it switches automatically into detection mode  
 
 During operation:
@@ -32,6 +33,25 @@ Each window is scored by the trained Isolation Forest model
 Anomalies are emitted as NDJSON  
 
 Detection keeps the baseline snapshot fixed until a new model is loaded, so repeated unseen behavior remains new to the current model.
+
+Training reserves the earliest 20% of selected windows as the reference baseline.
+It recalculates novelty for every later window against that fixed reference,
+using the same feature extractor as live detection. Only those later windows
+are used to fit the model and calculate its threshold. The reference never
+includes identities first observed in the later training period.
+
+Collection stores observed identities with `novelty_scored = false`; its novelty
+counts are placeholders. Training recalculates them from metadata, so restarting
+collection or mixing windows stored under older models does not change the
+novelty definition. Existing version-3 feature rows can be reused. Feature order
+and event schemas are unchanged; model bundles are now version 2.
+
+On upgrade, auto mode rebuilds a legacy model from the existing database before
+detecting. If more windows are needed, it collects them and retries. Explicit
+detect mode requires running `guardd train` first. Alert history is retained;
+training continues to use its existing 45-day feature retention policy.
+This change fixes feature consistency; it does not by
+itself establish improved detection accuracy.
 
 Ongoing:
 
@@ -244,8 +264,9 @@ mode = "auto"
 bootstrap_retry_seconds = 60
 retrain_interval_seconds = 604800
 
-[training]
-min_training_rows = 1
+[train]
+min_training_rows = 10
+baseline_fraction = 0.2
 contamination = 0.01
 n_estimators = 200
 threshold_percentile = 10.0
@@ -279,8 +300,17 @@ Controls the lifecycle of guardd.
 Controls model behavior and requirements.  
 
  min_training_rows  
-   -- Minimum number of feature windows required to train  
+   -- Minimum number of model-fit windows, excluding reference baseline windows
+
    -- If not met, training fails and will retry later  
+
+ baseline_fraction
+
+   -- Earliest fraction of selected windows reserved for the fixed baseline.
+
+   -- Default: `0.2`; must be greater than 0 and less than 1.
+
+   -- With `min_training_rows = 1380`, at least 1724 total windows are needed: 344 reference windows and 1380 model-fit windows (about 29 hours at one-minute windows).
 
  contamination  
    -- Expected proportion of anomalies in the data  

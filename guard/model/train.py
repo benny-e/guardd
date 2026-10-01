@@ -9,11 +9,18 @@ from typing import Any
 
 from sklearn.ensemble import IsolationForest
 
-from guard.pipeline.features import FEATURE_NAMES, FEATURE_VERSION
+from guard.pipeline.baseline import BaselineState
+from guard.pipeline.features import (
+    FEATURE_VERSION,
+    FeatureVector,
+    rebase_feature_vector,
+    window_context_from_metadata,
+)
 from guard.training.data_loader import load_training_dataset
 
-
-MODEL_BUNDLE_VERSION = 1
+MODEL_BUNDLE_VERSION = 2
+NOVELTY_POLICY = "frozen_reference_v1"
+DEFAULT_BASELINE_FRACTION = 0.2
 
 
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
@@ -31,32 +38,63 @@ def _atomic_write_bytes(path: Path, data: bytes) -> None:
 
     tmp_path.replace(path)
 
+
 def _build_baseline_snapshot(metadata_rows: list[dict[str, Any]]) -> dict[str, Any]:
-    known_comms: set[str] = set()
-    known_files: set[str] = set()
-    known_parent_child: set[tuple[int, str]] = set()
-
+    baseline = BaselineState()
     for metadata in metadata_rows:
-        for comm in metadata.get("unique_comms", []):
-            known_comms.add(str(comm))
+        baseline.observe_window(window_context_from_metadata(metadata))
+    return baseline.to_dict()
 
-        for path in metadata.get("unique_files", []):
-            known_files.add(str(path))
 
-        for item in metadata.get("unique_parent_child", []):
-            if isinstance(item, dict):
-                known_parent_child.add(
-                    (int(item["ppid"]), str(item["comm"]))
-                )
+def prepare_training_dataset(
+    dataset: dict[str, Any],
+    *,
+    baseline_fraction: float = DEFAULT_BASELINE_FRACTION,
+    min_training_rows: int = 10,
+) -> dict[str, Any]:
+    """Freeze an earlier reference, then replay later windows against it.
 
+    Reference windows are excluded from the model fit and threshold calculation.
+    Future identities cannot leak into the reference, and every later window
+    uses the exact baseline that will be shipped with the model.
+    """
+    if not 0.0 < baseline_fraction < 1.0:
+        raise ValueError("baseline_fraction must be between 0 and 1")
+    if min_training_rows < 1:
+        raise ValueError("min_training_rows must be positive")
+    if dataset["feature_version"] != FEATURE_VERSION:
+        raise ValueError("unsupported training feature version")
+    examples = sorted(
+        zip(dataset["window_start_ms"], dataset["X"], dataset["metadata"], strict=True),
+        key=lambda example: example[0],
+    )
+    reference_count = max(1, int(len(examples) * baseline_fraction))
+    training_count = len(examples) - reference_count
+    if training_count < min_training_rows:
+        raise ValueError(
+            f"not enough training rows: need at least {min_training_rows} after "
+            f"reserving {reference_count} baseline windows, got {max(0, training_count)}"
+        )
+    baseline_snapshot = _build_baseline_snapshot(
+        [metadata for _, _, metadata in examples[:reference_count]]
+    )
+    baseline = BaselineState.from_dict(baseline_snapshot)
+    features = [
+        rebase_feature_vector(
+            FeatureVector(FEATURE_VERSION, timestamp, values, metadata), baseline
+        )
+        for timestamp, values, metadata in examples[reference_count:]
+    ]
     return {
-        "known_comms": sorted(known_comms),
-        "known_files": sorted(known_files),
-        "known_parent_child": [
-            {"ppid": ppid, "comm": comm}
-            for ppid, comm in sorted(known_parent_child)
-        ],
+        "X": [feature.values for feature in features],
+        "baseline_snapshot": baseline_snapshot,
+        "baseline_row_count": reference_count,
+        "baseline_end_ms": examples[reference_count - 1][0],
+        "training_start_ms": features[0].window_start_ms,
+        "training_end_ms": features[-1].window_start_ms,
+        "rows": training_count,
     }
+
 
 def _compute_threshold(scores: list[float], percentile: float) -> float:
     if not scores:
@@ -85,6 +123,7 @@ def train_isolation_forest(
     n_estimators: int = 200,
     random_state: int = 42,
     threshold_percentile: float = 10.0,
+    baseline_fraction: float = DEFAULT_BASELINE_FRACTION,
 ) -> dict[str, Any]:
     dataset = load_training_dataset(
         str(db_path),
@@ -92,15 +131,13 @@ def train_isolation_forest(
         limit=limit,
     )
 
-    X = dataset["X"]
-    rows = dataset["rows"]
-
-    if rows < min_training_rows:
-        raise ValueError(
-            f"not enough training rows: need at least {min_training_rows}, got {rows}"
-        )
-
-    baseline_snapshot = _build_baseline_snapshot(dataset["metadata"])
+    prepared = prepare_training_dataset(
+        dataset,
+        baseline_fraction=baseline_fraction,
+        min_training_rows=min_training_rows,
+    )
+    X = prepared["X"]
+    rows = prepared["rows"]
 
     model = IsolationForest(
         n_estimators=n_estimators,
@@ -127,7 +164,13 @@ def train_isolation_forest(
         "random_state": int(random_state),
         "threshold_percentile": float(threshold_percentile),
         "threshold_score": float(threshold),
-        "baseline_snapshot": baseline_snapshot,
+        "novelty_policy": NOVELTY_POLICY,
+        "baseline_fraction": float(baseline_fraction),
+        "baseline_snapshot": prepared["baseline_snapshot"],
+        "baseline_row_count": prepared["baseline_row_count"],
+        "baseline_end_ms": prepared["baseline_end_ms"],
+        "training_start_ms": prepared["training_start_ms"],
+        "training_end_ms": prepared["training_end_ms"],
         "score_summary": {
             "min": min(scores),
             "max": max(scores),
@@ -141,6 +184,7 @@ def train_isolation_forest(
     return {
         "model_out_path": str(model_out_path),
         "rows": rows,
+        "baseline_rows": prepared["baseline_row_count"],
         "feature_version": dataset["feature_version"],
         "feature_names": list(dataset["feature_names"]),
         "threshold_score": float(threshold),
@@ -175,6 +219,12 @@ def bundle_summary(model_path: str | Path) -> dict[str, Any]:
         "threshold_percentile": bundle["threshold_percentile"],
         "threshold_score": bundle["threshold_score"],
         "score_summary": bundle["score_summary"],
+        "novelty_policy": bundle.get("novelty_policy", "legacy"),
+        "baseline_row_count": bundle.get("baseline_row_count"),
+        "baseline_fraction": bundle.get("baseline_fraction"),
+        "baseline_end_ms": bundle.get("baseline_end_ms"),
+        "training_start_ms": bundle.get("training_start_ms"),
+        "training_end_ms": bundle.get("training_end_ms"),
     }
 
 
