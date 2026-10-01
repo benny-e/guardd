@@ -1,16 +1,6 @@
 <h1 align="center">guardd</h1>
 <p align="center">Machine learning driven behavioral anomaly detection for Linux using eBPF + Isolation Forest</p>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.1-eab308">
-  <img src="https://img.shields.io/badge/status-experimental-f97316">
-  <img src="https://img.shields.io/badge/license-MIT-22c55e">
-  <img src="https://img.shields.io/badge/python-3.11+-3b82f6">
-  <img src="https://img.shields.io/badge/platform-linux-9ca3af">
-  <img src="https://img.shields.io/badge/telemetry-eBPF-ef4444">
-  <img src="https://img.shields.io/badge/architecture-eBPF%20%2B%20ML-1f2937">
-</p>
-
 ---
 
 Guardd collects low-level system events (process execution, network activity), aggregates them into time-windowed feature vectors, and detects anomalous behavior using a machine learning model.  
@@ -22,14 +12,6 @@ Guardd is focused on detecting **unknown threats**
 <p align="center">
   <img src="assets/guarddtui.png" width="800"/>
 </p>
-
----
-> [!WARNING]
-> This project is still in development  
-> Features and detection accuracy are actively being improved  
-> Feedback, suggestions, and contributions are welcome  
----
-
 ### How it works
 
 guardd runs as a single systemd service that manages the full lifecycle of data collection, training, and detection.
@@ -62,7 +44,7 @@ Detection resumes immediately after retraining with the updated model
 ```
 git clone https://github.com/benny-e/guardd.git
 cd guardd
-``````
+```
 
 #### 2. Run the install script
 
@@ -110,6 +92,107 @@ To launch: (after starting guardd.service)
 ```bash
 guardd tui
 ```
+
+#### Desktop GUI (optional)
+
+The PySide6 desktop client has two screens: **Overview** (service state, alerts
+today, model availability, Guardd CPU/memory usage, process ID and uptime, host
+and kernel, aggregation window size, feature schema, recent alerts, and telemetry
+freshness) and **Alerts**
+(search, severity/time filters, and a scrollable detail panel with scores,
+explanations, activity, and context). It refreshes every five seconds without
+blocking the interface. Times use your local timezone; “today” means your local
+calendar day.
+
+![Guardd desktop Overview](assets/guarddgui-overview.png)
+![Guardd desktop Alerts](assets/guarddgui-alerts.png)
+
+Screenshots show sample alerts and a simulated service state.
+
+For a new system installation with the GUI:
+
+```bash
+sudo bash install.sh --gui
+guardd gui
+```
+
+To add the GUI to an existing `/opt/guardd` installation, update its source first,
+then install the optional dependency in its virtual environment:
+
+```bash
+sudo /opt/guardd/.venv/bin/python -m pip install -e '/opt/guardd[gui]'
+guardd gui
+```
+
+For development from a checkout:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[gui]'
+.venv/bin/guardd gui --db-path data/features.db --model-path data/model.bundle
+```
+
+#### Application launcher and icon
+
+`install.sh --gui` also installs a Guardd launcher and icon into the system's
+application menu. The launcher runs `/usr/local/bin/guardd gui` as your desktop
+user. For an existing installation, you can add the launcher for your account
+from the patched checkout without restarting or reinstalling the daemon:
+
+```bash
+install -Dm644 desktop/guardd.desktop ~/.local/share/applications/guardd.desktop
+install -Dm644 guard/gui/assets/guardd.png ~/.local/share/icons/hicolor/256x256/apps/guardd.png
+rm -f ~/.local/share/icons/hicolor/scalable/apps/guardd.svg
+```
+
+Reopen your desktop's application list and search for **Guardd**. If an old icon
+is cached, run `gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor` when
+that command is available. The desktop entry expects the standard installer
+command at `/usr/local/bin/guardd`; adjust `Exec` and `TryExec` if yours is
+installed elsewhere.
+
+The GUI uses the same `[paths]` config and config discovery as the daemon.
+`--db-path` and `--model-path` override config; `--limit` controls the maximum
+matching alerts displayed (default 200, also configurable as `[gui] limit`).
+Overview counts cover all alerts today, independent of filters and this limit.
+
+Run it as your regular desktop user. It opens the existing SQLite database in
+read-only mode and never starts/stops the daemon, trains a model, or collects
+telemetry. Closing it leaves detection running. If the database is missing or
+unreadable, it shows a notice and retries on refresh. The database and any SQLite
+`-wal`/`-shm` files must be readable by that user; use your existing group or ACL
+policy if access is restricted. Do not launch the GUI with `sudo` to work around
+permissions.
+
+Service status refers specifically to `guardd.service`; it is **unknown** when
+systemd cannot be queried, and manual daemon runs are not detected. Model
+availability reports file presence and modification time, not model validity or
+confirmation that the service is in detection mode. The GUI does not unpickle
+model files.
+
+Resource usage covers the complete systemd service, including its eBPF collector.
+CPU is calculated between refreshes (one logical core equals 100%, so a busy
+multithreaded service can exceed 100%). Memory is the service’s cgroup memory
+usage. The first CPU sample shows “Sampling…”; unavailable accounting shows
+“Unavailable”. The supplied service unit enables CPU and memory accounting.
+For an existing installation, install the updated service unit and run
+`sudo systemctl daemon-reload` followed by `sudo systemctl restart guardd.service`
+to apply it. Window size reflects the daemon’s current 60-second aggregation
+default; feature schema comes from the latest stored window when available.
+
+On a headless host, install/run the daemon without the GUI. The GUI requires a
+graphical desktop session. If Qt reports missing platform libraries on Debian or
+Ubuntu, `install.sh --gui` installs the EGL/OpenGL, XKB, and XCB runtime packages.
+
+To run the desktop and data-access checks from a checkout:
+
+```bash
+.venv/bin/python -m pip install pytest
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
+```
+
+Qt interaction tests are skipped when PySide6 is not installed; the read-only
+database and CLI tests still run.
 
 ---
 

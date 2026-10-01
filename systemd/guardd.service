@@ -13,6 +13,8 @@ Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 LimitMEMLOCK=infinity
+CPUAccounting=true
+MemoryAccounting=true
 StandardOutput=journal
 StandardError=journal
 

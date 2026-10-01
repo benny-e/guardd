@@ -6,6 +6,13 @@ DATA_DIR="${INSTALL_DIR}/data"
 CONFIG_PATH="${INSTALL_DIR}/config.toml"
 SYSTEMD_DIR="/etc/systemd/system"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_GUI=false
+if [[ "${1:-}" == "--gui" && "$#" -eq 1 ]]; then
+  INSTALL_GUI=true
+elif [[ "$#" -ne 0 ]]; then
+  echo "Usage: sudo bash install.sh [--gui]"
+  exit 2
+fi
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Run this script with sudo or as root."
@@ -96,10 +103,24 @@ python3 -m venv "${INSTALL_DIR}/.venv"
 echo "[*] Installing Python package..."
 "${INSTALL_DIR}/.venv/bin/python" -m pip install --upgrade pip setuptools wheel
 "${INSTALL_DIR}/.venv/bin/python" -m pip install -e "${INSTALL_DIR}"
+if [[ "${INSTALL_GUI}" == true ]]; then
+  echo "[*] Installing optional desktop GUI..."
+  apt-get install -y libegl1 libgl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0
+  "${INSTALL_DIR}/.venv/bin/python" -m pip install -e "${INSTALL_DIR}[gui]"
+fi
 
 echo "[*] Installing guardd command..."
 ln -sf "${INSTALL_DIR}/.venv/bin/guardd" /usr/local/bin/guardd
 chmod 0755 "${INSTALL_DIR}/.venv/bin/guardd"
+if [[ "${INSTALL_GUI}" == true ]]; then
+  echo "[*] Installing desktop launcher and icon..."
+  install -Dm0644 "${INSTALL_DIR}/desktop/guardd.desktop" /usr/local/share/applications/guardd.desktop
+  install -Dm0644 "${INSTALL_DIR}/guard/gui/assets/guardd.png" /usr/local/share/icons/hicolor/256x256/apps/guardd.png
+  rm -f /usr/local/share/icons/hicolor/scalable/apps/guardd.svg
+  if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -f -t /usr/local/share/icons/hicolor || true
+  fi
+fi
 
 echo "[*] Building eBPF components..."
 pushd "${INSTALL_DIR}/ebpf" >/dev/null
@@ -132,6 +153,9 @@ echo "    Config: ${CONFIG_PATH}"
 echo
 echo "[+] Next steps:"
 echo "    sudo systemctl start guardd.service"
+if [[ "${INSTALL_GUI}" == true ]]; then
+  echo "    guardd gui (from your desktop session)"
+fi
 echo
 echo "[+] Debug:"
 echo "    systemctl status guardd.service"

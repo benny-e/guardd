@@ -10,11 +10,17 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["numpy", "scikit-learn"]
 
+[project.optional-dependencies]
+gui = ["PySide6>=6.6,<7"]
+
 [project.scripts]
 guardd = "guard.cli:main"
 
 [tool.setuptools]
 include-package-data = true
+
+[tool.setuptools.package-data]
+"guard.gui" = ["assets/*.png"]
 
 [tool.setuptools.packages.find]
 include = ["guard*"]

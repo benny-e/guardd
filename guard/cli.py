@@ -176,6 +176,10 @@ def resolve_args(args: argparse.Namespace, config: dict) -> argparse.Namespace:
     elif args.command == "tui":
         _resolve_tui_settings(args, config)
 
+    elif args.command == "gui":
+        _resolve_common_paths(args, config)
+        args.limit = _pick(getattr(args, "limit", None), deep_get(config, "gui", "limit"), 200)
+
     elif args.command == "collect":
         args.print_windows = _pick(
             getattr(args, "print_windows", None),
@@ -736,6 +740,10 @@ def build_parser() -> argparse.ArgumentParser:
     tui = sub.add_parser("tui", help="browse recent and historical alerts")
     tui.add_argument("--db-path", default=argparse.SUPPRESS, help="path to SQLite database")
     tui.add_argument("--limit", type=int, default=argparse.SUPPRESS, help="max alerts to load")
+    gui = sub.add_parser("gui", help="open the desktop Overview and Alerts interface")
+    gui.add_argument("--db-path", default=argparse.SUPPRESS, help="path to SQLite database")
+    gui.add_argument("--model-path", default=argparse.SUPPRESS, help="path to model bundle")
+    gui.add_argument("--limit", type=int, default=argparse.SUPPRESS, help="max matching alerts to display (default: 200)")
     daemon.add_argument(
     "--bootstrap-retry-seconds",
     type=int,
@@ -869,6 +877,20 @@ def cmd_tui(args: argparse.Namespace) -> int:
     _configure_logging(False)
     return run_tui(db_path=args.db_path, limit=args.limit)
 
+
+def cmd_gui(args: argparse.Namespace) -> int:
+    if args.limit < 1:
+        print("guardd gui: --limit must be positive")
+        return 2
+    try:
+        from guard.gui.app import run_gui
+    except ModuleNotFoundError as exc:
+        if exc.name and exc.name.startswith("PySide6"):
+            print('GUI dependency missing. Install with: python -m pip install ".[gui]"')
+            return 1
+        raise
+    return run_gui(db_path=args.db_path, model_path=args.model_path, limit=args.limit)
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -893,6 +915,8 @@ def main() -> int:
         return cmd_train(args)
     if args.command == "tui":
         return cmd_tui(args)
+    if args.command == "gui":
+        return cmd_gui(args)
 
     parser.error("unknown command")
     return 2

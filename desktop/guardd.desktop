@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Guardd
+GenericName=Behavioral Security Monitor
+Comment=Inspect behavioral alerts and Guardd resource usage
+Exec=/usr/local/bin/guardd gui
+TryExec=/usr/local/bin/guardd
+Icon=guardd
+Terminal=false
+Categories=System;Monitor;
+Keywords=security;alerts;anomalies;eBPF;
+StartupNotify=true
+StartupWMClass=Guardd
