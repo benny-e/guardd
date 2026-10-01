@@ -5,9 +5,12 @@
 
 Guardd collects low-level system events (process execution, network activity), aggregates them into time-windowed feature vectors, and detects anomalous behavior using a machine learning model.  
 
-Guardd is focused on detecting **unknown threats**  
 
 ---
+
+<p align="center">
+  <img src="assets/guarddgui-overview.png" width="800"/>
+</p
 
 <p align="center">
   <img src="assets/guarddtui.png" width="800"/>
